@@ -1,0 +1,108 @@
+name: Image (GHCR)
+
+# Public release image build for the GitHub repo. This file is the CI that
+# ships in release snapshots; the private dev pipeline (image.yml) stays on
+# the Forgejo repo and never lands on GitHub.
+#
+# Tags: main -> :main and :latest; v* -> :vX.Y.Z. APP_VERSION is baked into
+# the image so /api/health reports the build the container actually runs.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/toks-love/modelharbor
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Decide version and tag
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "IMAGE_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+            echo "APP_VERSION_ARG=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            ROLLING=false
+          else
+            echo "IMAGE_TAG=main" >> "$GITHUB_ENV"
+            echo "APP_VERSION_ARG=1.2.0-main-$SHORT_SHA" >> "$GITHUB_ENV"
+            ROLLING=true
+          fi
+          echo "ROLLING=$ROLLING" >> "$GITHUB_ENV"
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg APP_VERSION="$APP_VERSION_ARG" \
+            -t "$IMAGE:$IMAGE_TAG" \
+            .
+
+      # The smoke container is exercised from inside itself via docker exec:
+      # no port publishing, so the checks are identical on any daemon topology.
+      - name: Smoke test the image
+        run: |
+          set -e
+          docker run -d --name mh-smoke \
+            -e ALLOW_INSECURE_COOKIES=true \
+            "$IMAGE:$IMAGE_TAG"
+          trap 'docker logs mh-smoke 2>&1 | tail -40; docker rm -f mh-smoke >/dev/null 2>&1 || true' EXIT
+          docker exec -i -e MH_EXPECTED="$APP_VERSION_ARG" mh-smoke python3 - <<'PY'
+          import json, os, time, urllib.request
+
+          base = "http://127.0.0.1:7860"
+
+          def fetch(path, timeout=3):
+              with urllib.request.urlopen(base + path, timeout=timeout) as r:
+                  return r.read().decode()
+
+          health = None
+          for attempt in range(45):
+              try:
+                  health = json.loads(fetch("/api/health"))
+                  break
+              except Exception:
+                  time.sleep(2)
+          assert health is not None, "health endpoint never answered"
+          expected = os.environ["MH_EXPECTED"]
+          assert health.get("version") == expected, (
+              f"image reports version {health.get('version')!r}, built {expected!r}")
+          print("health:", health)
+
+          auth = fetch("/api/auth/status", timeout=5)
+          assert "accounts_enabled" in auth, "auth status payload is wrong"
+          spa = fetch("/", timeout=5)
+          assert '<div id="root">' in spa, "SPA index is not served"
+          print("smoke ok")
+          PY
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" |
+            docker login "$REGISTRY" \
+              --username "${{ github.actor }}" \
+              --password-stdin
+
+      - name: Publish rolling image (main)
+        if: env.ROLLING == 'true'
+        run: |
+          docker tag "$IMAGE:$IMAGE_TAG" "$IMAGE:latest"
+          docker push "$IMAGE:$IMAGE_TAG"
+          docker push "$IMAGE:latest"
+
+      - name: Publish release image
+        if: env.ROLLING == 'false'
+        run: docker push "$IMAGE:$IMAGE_TAG"

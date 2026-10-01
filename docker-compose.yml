@@ -1,0 +1,65 @@
+name: modelharbor
+
+services:
+  modelharbor:
+    # Public release images from the GitHub repo: pinned per release, with
+    # :latest tracking main. Rebuild locally in place with: docker compose build
+    image: ghcr.io/toks-love/modelharbor:v1.2.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: modelharbor
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      - "${APP_PORT:-7860}:7860"
+    environment:
+      # APP_VERSION is baked into the image by the build pipeline and is
+      # deliberately not overridden here, so /api/health reports the image
+      # this container actually runs.
+      MODEL_STORAGE: /models
+      MODEL_STORAGE_BACKEND: "${MODEL_STORAGE_BACKEND:-filesystem}"
+      DATA_DIR: /data
+      DATABASE_URL: "${DATABASE_URL:-}"
+      HF_ENDPOINT: "${HF_ENDPOINT:-https://huggingface.co}"
+      HF_TOKEN: "${HF_TOKEN:-}"
+      MAX_CONCURRENT_DOWNLOADS: "${MAX_CONCURRENT_DOWNLOADS:-2}"
+      DOWNLOAD_WORKERS_PER_JOB: "${DOWNLOAD_WORKERS_PER_JOB:-4}"
+      DOWNLOAD_MAX_ATTEMPTS: "${DOWNLOAD_MAX_ATTEMPTS:-3}"
+      DOWNLOAD_RETRY_SECONDS: "${DOWNLOAD_RETRY_SECONDS:-2}"
+      ACCOUNTS_ENABLED: "${ACCOUNTS_ENABLED:-true}"
+      ALLOW_INSECURE_COOKIES: "${ALLOW_INSECURE_COOKIES:-}"
+      ALLOW_ACCOUNTLESS: "${ALLOW_ACCOUNTLESS:-}"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-720}"
+      UPLOAD_CHUNK_MB: "${UPLOAD_CHUNK_MB:-8}"
+      MAX_UPLOAD_SIZE_GB: "${MAX_UPLOAD_SIZE_GB:-1024}"
+      LOCATIONS_JSON: "${LOCATIONS_JSON:-[]}"
+      WATCH_POLL_MINUTES: "${WATCH_POLL_MINUTES:-120}"
+      S3_BUCKET: "${S3_BUCKET:-}"
+      S3_PREFIX: "${S3_PREFIX:-models}"
+      S3_REGION: "${S3_REGION:-}"
+      S3_ENDPOINT_URL: "${S3_ENDPOINT_URL:-}"
+      S3_ADDRESSING_STYLE: "${S3_ADDRESSING_STYLE:-auto}"
+      S3_USE_SSL: "${S3_USE_SSL:-true}"
+      S3_VERIFY_SSL: "${S3_VERIFY_SSL:-true}"
+      S3_STORAGE_CLASS: "${S3_STORAGE_CLASS:-}"
+      S3_MAX_CONCURRENCY: "${S3_MAX_CONCURRENCY:-4}"
+      S3_MULTIPART_CHUNK_MB: "${S3_MULTIPART_CHUNK_MB:-64}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
+      S3_ACCESS_KEY_ID: "${S3_ACCESS_KEY_ID:-}"
+      S3_SECRET_ACCESS_KEY: "${S3_SECRET_ACCESS_KEY:-}"
+      S3_SESSION_TOKEN: "${S3_SESSION_TOKEN:-}"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+    volumes:
+      - "${MODEL_STORAGE_PATH:-./models}:/models"
+      - "./data:/data"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

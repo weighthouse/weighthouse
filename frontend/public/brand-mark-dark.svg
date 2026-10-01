@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Product mark for dark backgrounds</title>
+  <desc id="desc">A flat sailboat mark, light for dark backgrounds</desc>
+  <g fill="#9fcfc0">
+    <path d="M 17 36 L 49 36 A 16 16 0 0 1 17 36 Z"/>
+    <path d="M 34 8 L 52 29 L 34 29 Z"/>
+    <rect x="32.5" y="8" width="3" height="21" rx="1.5"/>
+  </g>
+</svg>

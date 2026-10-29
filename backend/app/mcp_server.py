@@ -547,7 +547,10 @@ def _tool_plan_download(services: McpServices, user: dict[str, Any], args: dict[
         raise McpToolError(str(error)) from error
     target = repository_path(validated, services.settings.model_storage)
     try:
-        plan, _ = services.downloads._plan(validated, options["revision"], selection, target)
+        details = services.downloads.hub.model_details(validated, options["revision"])
+        plan, _ = services.downloads._plan(
+            validated, options["revision"], selection, target, details
+        )
     except Exception as error:
         raise McpToolError(f"Planning failed: {error}") from error
     return {"status": "planned", "plan": plan.to_payload()}

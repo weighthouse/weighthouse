@@ -3,6 +3,7 @@ import { useScrollMemory } from './useScrollMemory'
 import {
   AlertCircle,
   ArrowDownToLine,
+  ArrowUp,
   Ban,
   Box,
   Check,
@@ -20,7 +21,10 @@ import {
   ListFilter,
   LoaderCircle,
   PackageCheck,
+  Pause,
+  Play,
   RefreshCw,
+  RotateCw,
   Search,
   Server,
   SlidersHorizontal,
@@ -45,6 +49,7 @@ import {
   densityOf,
   familiesOf,
   familyOf,
+  HUB_PAGE_SORTS,
   libraryQuerySearchParams,
   libraryQuerySignature,
   parseLibraryQuery,
@@ -52,6 +57,7 @@ import {
   savedGroupsOf,
   savedViewsOf,
   setSort,
+  sortHubPage,
   toggleBooleanFacet,
   withColumns,
   withFamilies,
@@ -60,6 +66,7 @@ import {
   withoutGroup,
   withoutView,
   type Density,
+  type HubPageSort,
   type LibraryQuery,
   type LibrarySort,
   type SavedGroup,
@@ -118,6 +125,7 @@ const taskOptions = [
 const columnLabels: Record<LibrarySort, string> = {
   repo_id: 'Name',
   size_bytes: 'Size',
+  parameter_count: 'Params',
   file_count: 'Files',
   modified_at: 'Modified',
   downloaded_at: 'Downloaded',
@@ -176,6 +184,18 @@ const SORT_LABELS: Record<string, string> = {
   likes: 'likes',
 }
 
+// Meta-line words for the client-side "This page" sorts.
+const PAGE_SORT_LABELS: Record<HubPageSort, string> = {
+  name: 'name',
+  kind: 'kind',
+  params: 'parameters',
+  quants: 'quants',
+  library: 'library',
+  downloads: 'downloads',
+  likes: 'likes',
+  modified: 'modified',
+}
+
 function ModelsPage({
   onToast,
   refreshDownloads,
@@ -192,11 +212,16 @@ function ModelsPage({
   const [library, setLibrary] = useState('')
   const [parameters, setParameters] = useState('')
   const [sort, setSort] = useState('trending')
+  // "This page" sorts reorder the loaded batch client-side; the Hub
+  // sorts order the whole index server-side. One is active at a time.
+  const [pageSort, setPageSort] = useState<HubPageSort | ''>('')
+  const [pageOrder, setPageOrder] = useState<'asc' | 'desc'>('asc')
   const [models, setModels] = useState<HubModel[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
+  const [cardQueuing, setCardQueuing] = useState<string | null>(null)
   // The cards/rows preference is the user's representation choice everywhere
   // models render; Explore reads and writes the same value as the Library.
   const [preferences, setPreferences] = useState<UserPreferences>({})
@@ -213,6 +238,27 @@ function ModelsPage({
     (repoId: string) => navigate(modelHref(repoId)),
     [navigate],
   )
+  const openModelUpdates = useCallback(
+    (repoId: string) => navigate(`${modelHref(repoId)}?tab=updates`),
+    [navigate],
+  )
+
+  // The card action queues the full repository in place (main revision,
+  // watch on); the download zone on the page stays the door for custom
+  // selections.
+  async function queueCardDownload(repoId: string) {
+    if (cardQueuing) return
+    setCardQueuing(repoId)
+    try {
+      await api.startDownload({ repo_id: repoId, mode: 'full', watch: true })
+      onToast(`${repoId} was queued (full repository).`)
+      refreshDownloads()
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : 'Unable to queue the download', 'error')
+    } finally {
+      setCardQueuing(null)
+    }
+  }
 
   useEffect(() => {
     api
@@ -285,6 +331,31 @@ function ModelsPage({
     return () => window.clearTimeout(timer)
   }, [fetchModels])
 
+  const displayedModels = useMemo(
+    () => (pageSort ? sortHubPage(models, pageSort, pageOrder) : models),
+    [models, pageSort, pageOrder],
+  )
+  const freshPageOrder: Record<HubPageSort, 'asc' | 'desc'> = {
+    name: 'asc',
+    kind: 'asc',
+    params: 'desc',
+    quants: 'desc',
+    library: 'asc',
+    downloads: 'desc',
+    likes: 'desc',
+    modified: 'desc',
+  }
+  function choosePageSort(key: string) {
+    if (!(HUB_PAGE_SORTS as readonly string[]).includes(key)) return
+    const next = key as HubPageSort
+    if (pageSort === next) {
+      setPageOrder((order) => (order === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setPageSort(next)
+      setPageOrder(freshPageOrder[next])
+    }
+  }
+
   const activeFilters = [task, library, parameters].filter(Boolean).length
 
   async function toggleSaved(model: HubModel) {
@@ -333,7 +404,7 @@ function ModelsPage({
                 {models.length} result{models.length === 1 ? '' : 's'}
                 {search ? <> for "{search}"</> : null}
                 <span className="sep">/</span>
-                sorted by {SORT_LABELS[sort]}
+                sorted by {pageSort ? PAGE_SORT_LABELS[pageSort] : SORT_LABELS[sort]}
               </>
             )}
           </p>
@@ -341,11 +412,35 @@ function ModelsPage({
         <div className="heading-actions">
           <label className="sort-control">
             <SlidersHorizontal size={15} />
-            <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort models">
-              <option value="trending">Trending</option>
-              <option value="downloads">Most downloaded</option>
-              <option value="updated">Recently updated</option>
-              <option value="likes">Most liked</option>
+            <select
+              value={pageSort ? `page:${pageSort}` : sort}
+              onChange={(event) => {
+                const value = event.target.value
+                if (value.startsWith('page:')) {
+                  choosePageSort(value.slice(5))
+                } else {
+                  setPageSort('')
+                  setSort(value)
+                }
+              }}
+              aria-label="Sort models"
+            >
+              <optgroup label="Hugging Face">
+                <option value="trending">Trending</option>
+                <option value="downloads">Most downloaded</option>
+                <option value="updated">Recently updated</option>
+                <option value="likes">Most liked</option>
+              </optgroup>
+              <optgroup label="This page">
+                <option value="page:name">Name</option>
+                <option value="page:kind">Kind</option>
+                <option value="page:params">Parameters</option>
+                <option value="page:quants">Quants</option>
+                <option value="page:library">Library</option>
+                <option value="page:downloads">Downloads</option>
+                <option value="page:likes">Likes</option>
+                <option value="page:modified">Modified</option>
+              </optgroup>
             </select>
             <ChevronDown size={14} />
           </label>
@@ -425,14 +520,6 @@ function ModelsPage({
               Reset filters
             </button>
           )}
-          <a
-            href="https://huggingface.co/models"
-            target="_blank"
-            rel="noreferrer"
-            className="quiet-link rail-external"
-          >
-            View on Hugging Face
-          </a>
         </aside>
 
         <section className="catalog-content">
@@ -461,8 +548,14 @@ function ModelsPage({
               className="rows-view"
               style={{ '--rows-grid': rowsGridTemplate(HUB_COLUMNS, visibleHubColumns) } as CSSProperties}
             >
-              <RowsHead spec={HUB_COLUMNS} visible={visibleHubColumns} />
-              {models.map((model) => (
+              <RowsHead
+                spec={HUB_COLUMNS}
+                visible={visibleHubColumns}
+                sortColumn={pageSort || null}
+                order={pageOrder}
+                onSort={choosePageSort}
+              />
+              {displayedModels.map((model) => (
                 <HubModelRowFull key={model.id} model={model} onOpen={openModel} visible={visibleHubColumns} />
               ))}
               {!error && models.length === 0 && (
@@ -475,14 +568,15 @@ function ModelsPage({
             </div>
           ) : (
             <div className="matrix-grid">
-              {models.map((model) => (
+              {displayedModels.map((model) => (
                 <HubModelRow
                   key={model.id}
                   model={model}
                   onOpen={openModel}
-                  onDownload={openModel}
+                  onDownload={() => (model.local ? openModelUpdates(model.id) : queueCardDownload(model.id))}
                   onSave={toggleSaved}
                   saving={saving === model.id}
+                  queuing={cardQueuing === model.id}
                 />
               ))}
               {!error && models.length === 0 && (
@@ -1035,18 +1129,27 @@ const downloadModeLabels = {
   custom: 'Custom selection',
 }
 
+type DownloadRowAction = 'pause' | 'resume' | 'restart' | 'move-to-front' | 'clear'
+
 function DownloadStatus({
   job,
   onCancel,
   cancelling,
+  onAction,
+  busyKey,
   onOpen,
 }: {
   job: DownloadJob
   onCancel?: (job: DownloadJob) => void
   cancelling?: boolean
+  onAction?: (job: DownloadJob, action: DownloadRowAction) => void
+  busyKey?: string | null
   onOpen?: (job: DownloadJob) => void
 }) {
   const isActive = activeDownloadStatuses.includes(job.status)
+  const isPaused = job.status === 'paused'
+  const isHistory = job.status === 'complete' || job.status === 'cancelled' || job.status === 'failed'
+  const busy = (action: DownloadRowAction) => busyKey === `${job.id}:${action}`
   const remaining = Math.max(0, job.total_bytes - job.downloaded_bytes)
   const eta = job.speed_bps > 0 ? Math.round(remaining / job.speed_bps) : 0
   const etaLabel = eta
@@ -1064,6 +1167,10 @@ function DownloadStatus({
   const open = onOpen
     ? () => onOpen(job)
     : undefined
+  const rowAction = (action: DownloadRowAction) => (event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (onAction) onAction(job, action)
+  }
   return (
     <article
       className={`download-row${open ? ' clickable-row' : ''}`}
@@ -1088,6 +1195,8 @@ function DownloadStatus({
           <AlertCircle size={18} />
         ) : job.status === 'cancelled' ? (
           <Ban size={18} />
+        ) : isPaused ? (
+          <Pause size={18} />
         ) : (
           <ArrowDownToLine size={18} />
         )}
@@ -1098,17 +1207,77 @@ function DownloadStatus({
             <h3>{job.repo_id}</h3>
             <span>{modeLabel}, revision {job.revision}</span>
           </div>
-          <div className="download-title-actions">
+          <div className="download-title-actions row-actions">
             <strong className={`job-status ${job.status}`}>{job.status}</strong>
+            {job.status === 'queued' && onAction && (
+              <button
+                type="button"
+                className="icon-btn"
+                title="Move to front"
+                aria-label="Move to front"
+                disabled={busy('move-to-front')}
+                onClick={rowAction('move-to-front')}
+              >
+                {busy('move-to-front') ? <LoaderCircle size={14} className="spin" /> : <ArrowUp size={14} />}
+              </button>
+            )}
+            {isActive && onAction && (
+              <button
+                type="button"
+                className="secondary-button compact"
+                disabled={busy('pause')}
+                onClick={rowAction('pause')}
+              >
+                {busy('pause') ? <LoaderCircle size={13} className="spin" /> : <Pause size={13} />}
+                Pause
+              </button>
+            )}
+            {isPaused && onAction && (
+              <button
+                type="button"
+                className="secondary-button compact"
+                disabled={busy('resume')}
+                onClick={rowAction('resume')}
+              >
+                {busy('resume') ? <LoaderCircle size={13} className="spin" /> : <Play size={13} />}
+                Resume
+              </button>
+            )}
             {isActive && onCancel && (
               <button
                 type="button"
                 className="cancel-download-button"
-                onClick={() => onCancel(job)}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onCancel(job)
+                }}
                 disabled={cancelling}
               >
                 {cancelling ? <LoaderCircle size={14} className="spin" /> : <Ban size={14} />}
                 {cancelling ? 'Cancelling…' : 'Cancel'}
+              </button>
+            )}
+            {job.status === 'failed' && onAction && (
+              <button
+                type="button"
+                className="secondary-button compact"
+                disabled={busy('restart')}
+                onClick={rowAction('restart')}
+              >
+                {busy('restart') ? <LoaderCircle size={13} className="spin" /> : <RotateCw size={13} />}
+                Restart
+              </button>
+            )}
+            {isHistory && onAction && (
+              <button
+                type="button"
+                className="secondary-button compact danger"
+                title="Files on disk are untouched."
+                disabled={busy('clear')}
+                onClick={rowAction('clear')}
+              >
+                {busy('clear') ? <LoaderCircle size={13} className="spin" /> : <X size={13} />}
+                Clear
               </button>
             )}
           </div>
@@ -1128,6 +1297,14 @@ function DownloadStatus({
               {typeof job.metadata.file_count === 'number' && <span>{job.metadata.file_count} repository files</span>}
             </div>
           </>
+        )}
+        {isPaused && (
+          <div className="download-stats">
+            <span>
+              {formatBytes(job.downloaded_bytes)}
+              {job.total_bytes > 0 && ` of ${formatBytes(job.total_bytes)}`} retained
+            </span>
+          </div>
         )}
         {job.status === 'complete' && (
           <div className="download-stats">
@@ -1174,16 +1351,25 @@ function DownloadsPage({
   user: User
 }) {
   const [cancelling, setCancelling] = useState<string | null>(null)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState<'pause-all' | 'resume-all' | 'clear' | null>(null)
   const [historyQuery, setHistoryQuery] = useState('')
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'failed'>('all')
   const navigate = useNavigate()
   useScrollMemory('downloads')
-  const active = jobs.filter((job) => activeDownloadStatuses.includes(job.status))
+  const running = jobs.filter((job) => activeDownloadStatuses.includes(job.status))
+  const paused = jobs.filter((job) => job.status === 'paused')
+  const active = [...running, ...paused]
   const finished = jobs.filter((job) => !active.includes(job))
-  const filteredFinished = historyQuery.trim()
-    ? finished.filter((job) => job.repo_id.toLowerCase().includes(historyQuery.trim().toLowerCase()))
-    : finished
-  const totalSpeed = active.reduce((total, job) => total + job.speed_bps, 0)
-  const remainingBytes = active.reduce(
+  const failedCount = jobs.filter((job) => job.status === 'failed').length
+  const query = historyQuery.trim().toLowerCase()
+  const visibleFinished = finished.filter(
+    (job) =>
+      (historyFilter === 'all' || job.status === 'failed') &&
+      (query === '' || job.repo_id.toLowerCase().includes(query)),
+  )
+  const totalSpeed = running.reduce((total, job) => total + job.speed_bps, 0)
+  const remainingBytes = running.reduce(
     (total, job) => total + Math.max(0, job.total_bytes - job.downloaded_bytes),
     0,
   )
@@ -1202,6 +1388,86 @@ function DownloadsPage({
     }
   }
 
+  async function rowAction(job: DownloadJob, action: DownloadRowAction) {
+    setBusyKey(`${job.id}:${action}`)
+    const fallback: Record<DownloadRowAction, string> = {
+      pause: 'Unable to pause download',
+      resume: 'Unable to resume download',
+      restart: 'Unable to restart download',
+      'move-to-front': 'Unable to move download',
+      clear: 'Unable to remove download',
+    }
+    try {
+      if (action === 'pause') {
+        await api.pauseDownload(job.id)
+        onToast(`${job.repo_id} is paused.`)
+      } else if (action === 'resume') {
+        await api.resumeDownload(job.id)
+        onToast(`${job.repo_id} is resuming.`)
+      } else if (action === 'restart') {
+        await api.restartDownload(job.id)
+        onToast(`${job.repo_id} was restarted.`)
+      } else if (action === 'move-to-front') {
+        await api.moveDownloadToFront(job.id)
+        onToast(`${job.repo_id} moved to the front of the queue.`)
+      } else {
+        await api.deleteDownload(job.id)
+        onToast(`Removed ${job.repo_id} from history.`)
+      }
+      refreshDownloads()
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : fallback[action], 'error')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  async function pauseAll() {
+    setBulkBusy('pause-all')
+    try {
+      const result = await api.pauseAllDownloads()
+      onToast(`${result.paused.length} downloads paused.`)
+      refreshDownloads()
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : 'Unable to pause downloads', 'error')
+    } finally {
+      setBulkBusy(null)
+    }
+  }
+
+  async function resumeAll() {
+    setBulkBusy('resume-all')
+    try {
+      const result = await api.resumeAllDownloads()
+      onToast(`${result.resumed.length} downloads resumed.`)
+      refreshDownloads()
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : 'Unable to resume downloads', 'error')
+    } finally {
+      setBulkBusy(null)
+    }
+  }
+
+  async function clearShown() {
+    if (visibleFinished.length === 0) return
+    setBulkBusy('clear')
+    try {
+      const result = await api.clearDownloads(visibleFinished.map((job) => job.id))
+      if (result.deleted === 1 && visibleFinished.length === 1) {
+        onToast(`Removed ${visibleFinished[0].repo_id} from history.`)
+      } else if (result.deleted > 0) {
+        onToast(
+          `Removed ${result.deleted} ${result.deleted === 1 ? 'entry' : 'entries'} from history.`,
+        )
+      }
+      refreshDownloads()
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : 'Unable to clear history', 'error')
+    } finally {
+      setBulkBusy(null)
+    }
+  }
+
   return (
     <div className="standard-page downloads-page">
       <div className="page-heading">
@@ -1211,14 +1477,43 @@ function DownloadsPage({
       </div>
 
       <section className="transfer-overview" aria-label="Download activity summary">
-        <div><span>Active transfers</span><strong>{active.length}</strong></div>
+        <div><span>Active transfers</span><strong>{running.length}</strong></div>
         <div><span>Combined speed</span><strong>{totalSpeed > 0 ? `${formatBytes(totalSpeed)}/s` : '—'}</strong></div>
         <div><span>Remaining</span><strong>{remainingBytes > 0 ? formatBytes(remainingBytes) : '—'}</strong></div>
         <div><span>Completed</span><strong>{completedCount}</strong></div>
+        <div><span>Failed</span><strong className={failedCount > 0 ? 'danger' : undefined}>{failedCount}</strong></div>
       </section>
 
       <section className="download-section">
-        <h2>Active</h2>
+        <div className="history-heading">
+          <h2>Active</h2>
+          {active.length > 0 && (
+            <div className="heading-tools">
+              {running.length > 0 && (
+                <button
+                  type="button"
+                  className="secondary-button compact"
+                  disabled={bulkBusy !== null}
+                  onClick={pauseAll}
+                >
+                  {bulkBusy === 'pause-all' ? <LoaderCircle size={13} className="spin" /> : <Pause size={13} />}
+                  Pause all
+                </button>
+              )}
+              {paused.length > 0 && (
+                <button
+                  type="button"
+                  className="secondary-button compact"
+                  disabled={bulkBusy !== null}
+                  onClick={resumeAll}
+                >
+                  {bulkBusy === 'resume-all' ? <LoaderCircle size={13} className="spin" /> : <Play size={13} />}
+                  Resume all
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <div className="download-list">
           {active.map((job) => (
             <DownloadStatus
@@ -1226,6 +1521,8 @@ function DownloadsPage({
               job={job}
               onCancel={cancel}
               cancelling={cancelling === job.id}
+              onAction={rowAction}
+              busyKey={busyKey}
             />
           ))}
           {active.length === 0 && (
@@ -1238,26 +1535,60 @@ function DownloadsPage({
       <section className="download-section">
         <div className="history-heading">
           <h2>History</h2>
-          <div className="catalog-search compact-search">
-            <Search size={16} />
-            <input
-              value={historyQuery}
-              onChange={(event) => setHistoryQuery(event.target.value)}
-              placeholder="Filter history"
-            />
+          <div className="heading-tools">
+            <div className="status-filter" role="group" aria-label="Filter history by status">
+              <button
+                type="button"
+                className={historyFilter === 'all' ? 'on' : ''}
+                onClick={() => setHistoryFilter('all')}
+              >
+                All<span className="n">{finished.length}</span>
+              </button>
+              <button
+                type="button"
+                className={historyFilter === 'failed' ? 'on' : ''}
+                onClick={() => setHistoryFilter('failed')}
+              >
+                Failed<span className="n">{failedCount}</span>
+              </button>
+            </div>
+            <div className="catalog-search compact-search">
+              <Search size={16} />
+              <input
+                value={historyQuery}
+                onChange={(event) => setHistoryQuery(event.target.value)}
+                placeholder="Filter history"
+              />
+            </div>
+            <button
+              type="button"
+              className="secondary-button compact danger"
+              title="Files on disk are untouched."
+              disabled={visibleFinished.length === 0 || bulkBusy !== null}
+              onClick={clearShown}
+            >
+              {bulkBusy === 'clear' && <LoaderCircle size={13} className="spin" />}
+              Clear {visibleFinished.length} shown
+            </button>
           </div>
         </div>
         <div className="download-list">
-          {filteredFinished.map((job) => (
+          {visibleFinished.map((job) => (
             <DownloadStatus
               key={job.id}
               job={job}
               onOpen={() => navigate(modelHref(job.repo_id))}
+              onAction={rowAction}
+              busyKey={busyKey}
             />
           ))}
-          {filteredFinished.length === 0 && (
+          {visibleFinished.length === 0 && (
             <div className="empty-compact">
-              {historyQuery ? 'No history matches this filter.' : 'Completed, cancelled, and failed jobs appear here.'}
+              {historyFilter === 'failed' && failedCount === 0
+                ? 'No failed downloads.'
+                : query
+                  ? 'No history matches this filter.'
+                  : 'Completed, cancelled, and failed jobs appear here.'}
             </div>
           )}
         </div>
@@ -1876,6 +2207,7 @@ function Application({
               onToast={showToast}
               canManageRuntimes={user.role === 'admin'}
               user={user}
+              jobs={jobs}
             />
           }
         />

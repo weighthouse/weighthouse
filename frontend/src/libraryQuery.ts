@@ -4,9 +4,12 @@
 // facet rail itself is computed by the backend from the actual library;
 // favorited and watching are the only built-in filter concepts.
 
+import type { HubModel } from './types'
+
 export const LIBRARY_SORTS = [
   'repo_id',
   'size_bytes',
+  'parameter_count',
   'file_count',
   'modified_at',
   'downloaded_at',
@@ -18,6 +21,50 @@ export const LIBRARY_SORTS = [
 
 export type LibrarySort = (typeof LIBRARY_SORTS)[number]
 export type SortOrder = 'asc' | 'desc'
+
+// Explore's "This page" sorts: client-side ordering over the loaded
+// batch (the Hub API only orders the whole index, and only those four
+// ways). Each key names the row column it mirrors.
+export const HUB_PAGE_SORTS = [
+  'name',
+  'kind',
+  'params',
+  'quants',
+  'library',
+  'downloads',
+  'likes',
+  'modified',
+] as const
+
+export type HubPageSort = (typeof HUB_PAGE_SORTS)[number]
+
+function hubPageValue(model: HubModel, sort: HubPageSort): string | number {
+  switch (sort) {
+    case 'name': return model.id.toLowerCase()
+    case 'kind': return (model.pipeline_tag || '').toLowerCase()
+    case 'params': return model.parameter_count ?? 0
+    case 'quants': return model.quant_count ?? 0
+    case 'library': return (model.library_name || '').toLowerCase()
+    case 'downloads': return model.downloads ?? 0
+    case 'likes': return model.likes ?? 0
+    case 'modified': return model.last_modified || ''
+  }
+}
+
+export function sortHubPage(models: HubModel[], sort: HubPageSort, order: SortOrder): HubModel[] {
+  const factor = order === 'asc' ? 1 : -1
+  return [...models].sort((a, b) => {
+    const av = hubPageValue(a, sort)
+    const bv = hubPageValue(b, sort)
+    // A given sort key always yields one kind of value, so the string
+    // and number branches never mix within a single sort.
+    if (typeof av === 'string' && typeof bv === 'string') return factor * av.localeCompare(bv)
+    const an = Number(av)
+    const bn = Number(bv)
+    if (an !== bn) return factor * (an - bn)
+    return a.id.localeCompare(b.id)
+  })
+}
 export type Density = 'cards' | 'rows'
 
 export type BooleanFacet = 'favorited' | 'watching'
@@ -56,6 +103,7 @@ const freshOrderFor: Record<LibrarySort, SortOrder> = {
   location: 'asc',
   storage_backend: 'asc',
   size_bytes: 'desc',
+  parameter_count: 'desc',
   file_count: 'desc',
   modified_at: 'desc',
   downloaded_at: 'desc',

@@ -11,6 +11,7 @@ import {
   familiesOf,
   familyOf,
   hasActiveFacets,
+  HUB_PAGE_SORTS,
   libraryQuerySearchParams,
   libraryQuerySignature,
   parseLibraryQuery,
@@ -18,6 +19,7 @@ import {
   savedGroupsOf,
   savedViewsOf,
   setSort,
+  sortHubPage,
   toggleBooleanFacet,
   withColumns,
   withDensity,
@@ -223,4 +225,59 @@ test('columnsOf merges new default-on columns into a stored set from an older er
 test('columnsOf falls back to defaults when the stored set is empty', () => {
   const prefs = { columns: { watched: [] } }
   assert.deepEqual(columnsOf(prefs, 'watched', REGISTRY, DEFAULTS), DEFAULTS)
+})
+
+// --- Explore "This page" sorts (client-side over the loaded batch) ---
+
+function hubModel(overrides) {
+  return { id: 'owner/name', downloads: 0, likes: 0, ...overrides }
+}
+
+test('page sort orders numerics descending and puts unknowns last', () => {
+  const models = [
+    hubModel({ id: 'a/zero' }),
+    hubModel({ id: 'b/few', downloads: 3 }),
+    hubModel({ id: 'c/many', downloads: 90 }),
+  ]
+  const sorted = sortHubPage(models, 'downloads', 'desc')
+  assert.deepEqual(sorted.map((m) => m.id), ['c/many', 'b/few', 'a/zero'])
+})
+
+test('page sort flips on asc and orders names case-insensitively', () => {
+  const models = [
+    hubModel({ id: 'zeta/last' }),
+    hubModel({ id: 'alpha/first' }),
+    hubModel({ id: 'Mid/middle' }),
+  ]
+  const sorted = sortHubPage(models, 'name', 'asc')
+  assert.deepEqual(sorted.map((m) => m.id), ['alpha/first', 'Mid/middle', 'zeta/last'])
+  const flipped = sortHubPage(models, 'name', 'desc')
+  assert.deepEqual(flipped.map((m) => m.id), ['zeta/last', 'Mid/middle', 'alpha/first'])
+})
+
+test('page sort leaves unknown params below known ones', () => {
+  const models = [
+    hubModel({ id: 'a/known', parameter_count: 7 }),
+    hubModel({ id: 'b/unknown' }),
+    hubModel({ id: 'c/big', parameter_count: 70 }),
+  ]
+  assert.deepEqual(
+    sortHubPage(models, 'params', 'desc').map((m) => m.id),
+    ['c/big', 'a/known', 'b/unknown'],
+  )
+})
+
+test('page sort ties fall back to the repo id, stable and deterministic', () => {
+  const models = [
+    hubModel({ id: 'b/two', likes: 5 }),
+    hubModel({ id: 'a/one', likes: 5 }),
+  ]
+  assert.deepEqual(sortHubPage(models, 'likes', 'asc').map((m) => m.id), ['a/one', 'b/two'])
+})
+
+test('every page sort key is a valid comparator input', () => {
+  const models = [hubModel({ id: 'a/x', quant_count: 1, library_name: 'pytorch', last_modified: '2026-01-02' })]
+  for (const key of HUB_PAGE_SORTS) {
+    assert.doesNotThrow(() => sortHubPage(models, key, 'asc'))
+  }
 })

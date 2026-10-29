@@ -20,6 +20,8 @@ Custom pattern examples:
 
 ## Gated and private models
 
+ModelHarbor checks for access to the model before starting a download.
+
 1. Accept the repository's license or access terms on huggingface.co while signed in.
 2. [Create a read-only user access token.](https://huggingface.co/settings/tokens)
 3. Set it in `.env` as `HF_TOKEN=hf_your_read_token` and restart the service.
@@ -37,6 +39,8 @@ A download watches its repository by default; the watch toggle on the model page
 `WATCH_POLL_MINUTES` in `.env` sets how often watched repositories are checked (`120` by default).
 
 ## Cancel and resume
+
+You can also pause a download. Pausing a download keeps everything on disk that you've downloaded so far; resuming requeues the job: completed files are skipped, interrupted files are restarted.
 
 An active download can be cancelled. Already-transferred files and Hugging Face's local-directory metadata are kept, so starting the same repository again resumes instead of re-downloading. Interrupted downloads recover the same way after a restart.
 
@@ -68,7 +72,3 @@ The job shows the transport that ran and, on failure, the worker's final output.
 ## GGUF inspection
 
 A repository with GGUF files gets a **GGUF** tab on the model page. It reads a bounded byte range of the selected file and shows metadata, tensor names, shapes, data types, quantization breakdown, and parameter count — without downloading the weights. Gated repos use the backend's `HF_TOKEN`.
-
-## What downloads do not do
-
-The application transfers files. It does not execute repository code, import model modules, or deserialize weights. Pickle-based formats only run code when another application loads them.

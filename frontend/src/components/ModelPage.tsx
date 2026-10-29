@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ExternalLink, Eye, LoaderCircle } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { ExternalLink, Eye, LoaderCircle, Lock } from 'lucide-react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
-import type { HubModelDetails, LocalModelDetails, User, WatchRecord } from '../types'
+import type {
+  DownloadJob,
+  HubModelDetails,
+  LocalModelDetails,
+  RuntimeTarget,
+  User,
+  WatchRecord,
+} from '../types'
 import { LibraryConsole, LibrarySurface, ModelCardDocument, type SurfaceTab } from './SurfacePanels'
 import { DownloadZone, WatchToggle } from './HubPanels'
 import { NotesPanel } from './NotesPanel'
@@ -15,6 +22,7 @@ interface ModelPageProps {
   onToast: (message: string, tone?: 'success' | 'error') => void
   canManageRuntimes: boolean
   user: User
+  jobs: DownloadJob[]
 }
 
 // The one model PAGE (M2, resumed as its true shape): every door links
@@ -32,6 +40,7 @@ export function ModelPage({
   onToast,
   canManageRuntimes,
   user,
+  jobs,
 }: ModelPageProps) {
   const params = useParams()
   const navigate = useNavigate()
@@ -64,9 +73,16 @@ export function ModelPage({
   const [managePanel, setManagePanel] = useState<'integrity' | 'delete' | 'runtime' | null>(null)
   const [manageIntent, setManageIntent] = useState<'verify' | 'move' | null>(null)
   const [autoCheckKey, setAutoCheckKey] = useState(0)
+  const [searchParams] = useSearchParams()
+  // Send-to-runtime is deprecated: the door shows only when at least one
+  // target is configured, so the page never offers a dead control.
+  const [runtimeTargets, setRuntimeTargets] = useState<RuntimeTarget[] | null>(null)
 
   const inLibrary = local !== null
   const watched = watchRecord !== null
+  const repoJob = jobs.find(
+    (job) => job.repo_id === repoId && ['queued', 'preparing', 'downloading'].includes(job.status),
+  )
 
   useEffect(() => {
     if (!repoId) {
@@ -180,6 +196,32 @@ export function ModelPage({
     }
   }, [watchTouched, repoId, watched, watchBusy])
 
+  // Send-to-runtime is deprecated: the door shows only while at least one
+  // target is configured, so the page never offers a dead control.
+  useEffect(() => {
+    if (!canManageRuntimes || !inLibrary) {
+      setRuntimeTargets(null)
+      return
+    }
+    let ignore = false
+    api
+      .runtimeTargets()
+      .then((payload) => {
+        if (!ignore) setRuntimeTargets(payload.items)
+      })
+      .catch(() => {
+        if (!ignore) setRuntimeTargets([])
+      })
+    return () => {
+      ignore = true
+    }
+  }, [canManageRuntimes, inLibrary])
+
+  // Deep link from a card's update action: ?tab=updates.
+  useEffect(() => {
+    if (inLibrary && searchParams.get('tab') === 'updates') setTab('updates')
+  }, [inLibrary, searchParams])
+
   // Library actions refresh the copy facts in place, so the pinned
   // fact lines stay truthful after a move, a cache swap, or a deletion.
   function refreshDetails(target: string) {
@@ -216,6 +258,102 @@ export function ModelPage({
 
   const [org, modelName] = repoId.split('/', 2)
   const drift = inLibrary && watchRecord?.update_available === true
+
+  // The reading surface, shared by both page shapes: a hub-only page
+  // renders it alone; a library page pins it left of the notes column.
+  const surface = (
+    <>
+      <div className="surface-tabs" role="tablist" aria-label="Model surface">
+        <button
+          id="surface-card-tab"
+          role="tab"
+          aria-selected={tab === 'card'}
+          aria-controls="surface-card-panel"
+          className={tab === 'card' ? 'active' : ''}
+          onClick={() => setTab('card')}
+        >
+          Card
+        </button>
+        <button
+          id="surface-files-tab"
+          role="tab"
+          aria-selected={tab === 'files'}
+          aria-controls="surface-files-panel"
+          className={tab === 'files' ? 'active' : ''}
+          onClick={() => setTab('files')}
+        >
+          Files <span>{inLibrary ? local?.model.file_count : model?.files.length}</span>
+        </button>
+        {model && ggufFiles.length > 0 && (
+          <button
+            id="surface-gguf-tab"
+            role="tab"
+            aria-selected={tab === 'gguf'}
+            aria-controls="surface-gguf-panel"
+            className={tab === 'gguf' ? 'active' : ''}
+            onClick={() => setTab('gguf')}
+          >
+            GGUF <span>{ggufFiles.length}</span>
+          </button>
+        )}
+        {inLibrary && (
+          <button
+            id="surface-updates-tab"
+            role="tab"
+            aria-selected={tab === 'updates'}
+            aria-controls="surface-updates-panel"
+            className={tab === 'updates' ? 'active' : ''}
+            onClick={() => setTab('updates')}
+          >
+            Updates
+          </button>
+        )}
+      </div>
+      <div className="surface-panels">
+        <div id="surface-card-panel" hidden={tab !== 'card' || inLibrary}>
+          {model?.model_card ? (
+            <ModelCardDocument
+              source={model.model_card}
+              sourceUrl={model.source_url}
+              revision={model.revision}
+            />
+          ) : (
+            <div className="empty-compact">
+              {model
+                ? 'This repository does not expose a README model card.'
+                : 'The upstream repository could not be read; the stored copy still answers below.'}
+            </div>
+          )}
+        </div>
+        <div id="surface-files-panel" hidden={tab !== 'files' || inLibrary}>
+          <div className="file-list">
+            {model?.files.map((file) => (
+              <div key={file.path} className="file-row">
+                <span className="file-glyph" aria-hidden="true">▸</span>
+                <span title={file.path}>{file.path}</span>
+                <small>{file.size ? formatBytes(file.size) : '—'}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+        {model && (
+          <div id="surface-gguf-panel" hidden={tab !== 'gguf'}>
+            <GgufInspector repoId={repoId} revision={revision} files={ggufFiles} />
+          </div>
+        )}
+        {inLibrary && local && (
+          <LibrarySurface
+            repoId={repoId}
+            details={local}
+            tab={tab}
+            onToast={onToast}
+            onChanged={onChanged}
+            autoCheckKey={autoCheckKey}
+          />
+        )}
+      </div>
+    </>
+  )
 
   return (
     <div className="standard-page model-page">
@@ -296,6 +434,18 @@ export function ModelPage({
       {hubError && <div className="inline-error">{hubError}</div>}
       {watchError && <div className="inline-error">{watchError}</div>}
 
+      {model && model.gated && (
+        <div className="security-note warning" style={{ marginBottom: 18 }}>
+          <Lock size={15} aria-hidden="true" />
+          <div>
+            Gated — accept the model's terms before downloading.{' '}
+            <a className="m-link" href={model.source_url} target="_blank" rel="noreferrer">
+              huggingface.co/{repoId}
+            </a>
+          </div>
+        </div>
+      )}
+
       {inLibrary && local && (
         <div className="ops-line">
           {drift && watchRecord && (
@@ -310,7 +460,7 @@ export function ModelPage({
             <button type="button" className="secondary-button compact" onClick={() => openManage('integrity', 'verify')}>Verify</button>
             <button type="button" className="secondary-button compact" onClick={() => openManage('integrity', 'move')}>Move…</button>
             <button type="button" className="secondary-button compact danger" onClick={() => openManage('delete')}>Delete…</button>
-            {canManageRuntimes && (
+            {canManageRuntimes && runtimeTargets && runtimeTargets.length > 0 && (
               <button type="button" className="secondary-button compact" onClick={() => openManage('runtime')}>Runtime…</button>
             )}
           </span>
@@ -345,106 +495,21 @@ export function ModelPage({
           onRevisionChange={setRevision}
           watched={watched}
           watchTouched={watchTouched}
+          activeJob={repoJob ?? null}
         />
       )}
 
-      {inLibrary && local && (
-        <NotesPanel repoId={repoId} user={user} onToast={onToast} />
-      )}
-
-      {(model || inLibrary) && (
-        <>
-          <div className="surface-tabs" role="tablist" aria-label="Model surface">
-            <button
-              id="surface-card-tab"
-              role="tab"
-              aria-selected={tab === 'card'}
-              aria-controls="surface-card-panel"
-              className={tab === 'card' ? 'active' : ''}
-              onClick={() => setTab('card')}
-            >
-              Card
-            </button>
-            <button
-              id="surface-files-tab"
-              role="tab"
-              aria-selected={tab === 'files'}
-              aria-controls="surface-files-panel"
-              className={tab === 'files' ? 'active' : ''}
-              onClick={() => setTab('files')}
-            >
-              Files <span>{inLibrary ? local?.model.file_count : model?.files.length}</span>
-            </button>
-            {model && ggufFiles.length > 0 && (
-              <button
-                id="surface-gguf-tab"
-                role="tab"
-                aria-selected={tab === 'gguf'}
-                aria-controls="surface-gguf-panel"
-                className={tab === 'gguf' ? 'active' : ''}
-                onClick={() => setTab('gguf')}
-              >
-                GGUF <span>{ggufFiles.length}</span>
-              </button>
-            )}
-            {inLibrary && (
-              <button
-                id="surface-updates-tab"
-                role="tab"
-                aria-selected={tab === 'updates'}
-                aria-controls="surface-updates-panel"
-                className={tab === 'updates' ? 'active' : ''}
-                onClick={() => setTab('updates')}
-              >
-                Updates
-              </button>
-            )}
+      {(model || inLibrary) &&
+        (inLibrary && local ? (
+          <div className="model-body">
+            <div className="model-body-main">{surface}</div>
+            <aside className="model-body-side">
+              <NotesPanel repoId={repoId} user={user} onToast={onToast} />
+            </aside>
           </div>
-          <div className="surface-panels">
-            <div id="surface-card-panel" hidden={tab !== 'card' || inLibrary}>
-              {model?.model_card ? (
-                <ModelCardDocument
-                  source={model.model_card}
-                  sourceUrl={model.source_url}
-                  revision={model.revision}
-                />
-              ) : (
-                <div className="empty-compact">
-                  {model
-                    ? 'This repository does not expose a README model card.'
-                    : 'The upstream repository could not be read; the stored copy still answers below.'}
-                </div>
-              )}
-            </div>
-            <div id="surface-files-panel" hidden={tab !== 'files' || inLibrary}>
-              <div className="file-list">
-                {model?.files.map((file) => (
-                  <div key={file.path} className="file-row">
-                    <span className="file-glyph" aria-hidden="true">▸</span>
-                    <span title={file.path}>{file.path}</span>
-                    <small>{file.size ? formatBytes(file.size) : '—'}</small>
-                  </div>
-                ))}
-              </div>
-            </div>
-            {model && (
-              <div id="surface-gguf-panel" hidden={tab !== 'gguf'}>
-                <GgufInspector repoId={repoId} revision={revision} files={ggufFiles} />
-              </div>
-            )}
-            {inLibrary && local && (
-              <LibrarySurface
-                repoId={repoId}
-                details={local}
-                tab={tab}
-                onToast={onToast}
-                onChanged={onChanged}
-                autoCheckKey={autoCheckKey}
-              />
-            )}
-          </div>
-        </>
-      )}
+        ) : (
+          surface
+        ))}
     </div>
   )
 }

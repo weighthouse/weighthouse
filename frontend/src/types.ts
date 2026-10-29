@@ -159,7 +159,7 @@ export interface DownloadJob {
   id: string
   repo_id: string
   revision: string
-  status: 'queued' | 'preparing' | 'downloading' | 'complete' | 'failed' | 'cancelled'
+  status: 'queued' | 'preparing' | 'downloading' | 'paused' | 'complete' | 'failed' | 'cancelled'
   total_bytes: number
   downloaded_bytes: number
   progress: number
@@ -170,6 +170,7 @@ export interface DownloadJob {
     allow_patterns?: string[]
     ignore_patterns?: string[]
     mode?: DownloadMode
+    update_merge?: boolean
   }
   metadata: Record<string, unknown>
   created_at: string

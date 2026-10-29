@@ -2,9 +2,7 @@ name: modelharbor
 
 services:
   modelharbor:
-    # Public release images from the GitHub repo: pinned per release, with
-    # :latest tracking main. Rebuild locally in place with: docker compose build
-    image: ghcr.io/toks-love/modelharbor:v1.2.0
+    image: ghcr.io/toks-love/modelharbor:v1.3.0
     build:
       context: .
       dockerfile: Dockerfile
@@ -14,9 +12,6 @@ services:
     ports:
       - "${APP_PORT:-7860}:7860"
     environment:
-      # APP_VERSION is baked into the image by the build pipeline and is
-      # deliberately not overridden here, so /api/health reports the image
-      # this container actually runs.
       MODEL_STORAGE: /models
       MODEL_STORAGE_BACKEND: "${MODEL_STORAGE_BACKEND:-filesystem}"
       DATA_DIR: /data

@@ -5,6 +5,7 @@ import {
   Columns3,
   Download,
   Heart,
+  LoaderCircle,
   LockKeyhole,
   Pin,
   RefreshCw,
@@ -32,28 +33,29 @@ export const NAME_TRACK = 'minmax(0, 1.6fr)'
 export const LOCAL_COLUMNS: ColumnSpec[] = [
   { id: 'kind', label: 'Kind', track: '105px', sortKey: 'pipeline_tag' },
   { id: 'size', label: 'Size', track: '84px', align: 'right', sortKey: 'size_bytes' },
-  { id: 'params', label: 'Params', track: '84px', align: 'right' },
-  { id: 'library', label: 'Library', track: '110px' },
-  { id: 'location', label: 'Location', track: '110px' },
+  { id: 'params', label: 'Params', track: '84px', align: 'right', sortKey: 'parameter_count' },
+  { id: 'library', label: 'Library', track: '110px', sortKey: 'library_name' },
+  { id: 'location', label: 'Location', track: '110px', sortKey: 'location' },
   { id: 'state', label: 'State', track: '130px' },
   { id: 'note', label: 'Note', track: 'minmax(0, 1.1fr)' },
   { id: 'modified', label: 'Modified', track: '92px', align: 'right', sortKey: 'modified_at' },
   { id: 'files', label: 'File count', track: '78px', align: 'right', sortKey: 'file_count' },
+  { id: 'downloaded', label: 'Downloaded', track: '92px', align: 'right', sortKey: 'downloaded_at' },
 ]
-// Defaults: the card's facts (size, params, library) on, note and file
-// count off.
+// Defaults: the card's facts (size, params, library) on, note, file
+// count, and downloaded off.
 export const LOCAL_COLUMNS_DEFAULT: string[] = ['kind', 'size', 'params', 'library', 'location', 'state', 'modified']
 export const LOCAL_COLUMN_IDS: string[] = LOCAL_COLUMNS.map((column) => column.id)
 
 export const HUB_COLUMNS: ColumnSpec[] = [
-  { id: 'kind', label: 'Kind', track: '110px' },
-  { id: 'params', label: 'Params', track: '84px', align: 'right' },
-  { id: 'quants', label: 'Quants', track: '78px', align: 'right' },
-  { id: 'library', label: 'Library', track: '110px' },
+  { id: 'kind', label: 'Kind', track: '110px', sortKey: 'kind' },
+  { id: 'params', label: 'Params', track: '84px', align: 'right', sortKey: 'params' },
+  { id: 'quants', label: 'Quants', track: '78px', align: 'right', sortKey: 'quants' },
+  { id: 'library', label: 'Library', track: '110px', sortKey: 'library' },
   { id: 'state', label: 'State', track: '120px' },
-  { id: 'downloads', label: 'Downloads', track: '92px', align: 'right' },
-  { id: 'likes', label: 'Likes', track: '78px', align: 'right' },
-  { id: 'modified', label: 'Modified', track: '92px', align: 'right' },
+  { id: 'downloads', label: 'Downloads', track: '92px', align: 'right', sortKey: 'downloads' },
+  { id: 'likes', label: 'Likes', track: '78px', align: 'right', sortKey: 'likes' },
+  { id: 'modified', label: 'Modified', track: '92px', align: 'right', sortKey: 'modified' },
 ]
 export const HUB_COLUMNS_DEFAULT: string[] = ['kind', 'params', 'quants', 'library', 'state', 'downloads', 'likes', 'modified']
 export const HUB_COLUMN_IDS: string[] = HUB_COLUMNS.map((column) => column.id)
@@ -285,14 +287,20 @@ export function HubModelRow({
             type="button"
             className="icon-btn"
             disabled={queuing}
-            title={model.local ? 'Update this copy' : 'Download'}
-            aria-label={model.local ? `Update ${model.id}` : `Download ${model.id}`}
+            title={model.local ? 'Update this copy' : 'Download the full repository'}
+            aria-label={model.local ? `Update ${model.id}` : `Download the full repository for ${model.id}`}
             onClick={(event) => {
               event.stopPropagation()
               onDownload(model.id)
             }}
           >
-            {queuing ? <RefreshCw size={13} className="spin" /> : <Download size={13} />}
+            {model.local ? (
+              <RefreshCw size={13} />
+            ) : queuing ? (
+              <LoaderCircle size={13} className="spin" />
+            ) : (
+              <Download size={13} />
+            )}
           </button>
           <button
             type="button"
@@ -427,6 +435,11 @@ export function LocalModelRow({ model, onOpen, visible, updateAvailable, underFa
     ),
     modified: <span className="c-mod">{relativeTime(model.modified_at)}</span>,
     files: <span className="c-num">{model.file_count}</span>,
+    downloaded: model.downloaded_at ? (
+      <span className="c-mod">{relativeTime(model.downloaded_at)}</span>
+    ) : (
+      <span className="c-empty">—</span>
+    ),
   }
   return (
     <div

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -86,6 +87,10 @@ class DownloadManager:
         )
         self._submitted: set[str] = set()
         self._cancel_events: dict[str, threading.Event] = {}
+        # Jobs whose stop was a pause, not a cancel: the worker teardown
+        # writes "paused" state instead of "cancelled" and leaves no
+        # cancelled manifest on the target directory.
+        self._pause_requested: set[str] = set()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._lock = threading.RLock()
         # The completion write and the cancellation write both do a
@@ -111,6 +116,10 @@ class DownloadManager:
         if active:
             if active.get("user_id") != user_id:
                 raise ValueError("This model is already being downloaded by another account.")
+            if active["status"] == "paused":
+                # Re-queueing a model with a paused job resumes that job
+                # instead of stacking a second one on the same target.
+                return self.resume(active["id"])
             return active
         try:
             selection = resolve_selection(
@@ -124,10 +133,26 @@ class DownloadManager:
             raise ValueError(str(error)) from error
         target = repository_path(validated, self.settings.model_storage)
         created = now_iso()
+        requested_revision = revision.strip() or "main"
         try:
-            plan, metadata = self._plan(validated, revision.strip() or "main", selection, target)
+            details = self.hub.model_details(validated, requested_revision)
+        except Exception as error:
+            raise ValueError(str(error)) from error
+        try:
+            plan, metadata = self._plan(validated, requested_revision, selection, target, details)
         except PlanError as error:
             raise ValueError(str(error)) from error
+        except Exception as error:
+            # Fail fast on gated repositories: the card says so, so the
+            # error can say so too instead of leaking a raw HTTP status.
+            if details.get("gated") and self._is_auth_error(error):
+                raise ValueError(self._gated_access_message(validated, details)) from error
+            code = self._http_error_code(str(error))
+            if details.get("gated") and code and code.startswith("5"):
+                raise ValueError(
+                    self._gated_possible_message(validated, details.get("source_url"), code)
+                ) from error
+            raise
         payload = {
             "mode": selection.mode,
             "allow_patterns": selection.allow_patterns,
@@ -164,7 +189,7 @@ class DownloadManager:
             "user_id": user_id,
         }
         download = self.database.create_download(record)
-        self._submit(download["id"])
+        self._dispatch()
         return download
 
     def _plan(
@@ -173,14 +198,16 @@ class DownloadManager:
         revision: str,
         selection: Any,
         target: Path,
+        details: dict[str, Any],
     ) -> tuple[DownloadPlan, dict[str, Any]]:
         """Resolve the revision and freeze the dry-run into a plan.
 
         Returns the plan plus the card metadata captured at the same
         moment, so the worker and the final manifest work from a single
-        frozen snapshot of the revision.
+        frozen snapshot of the revision. The caller fetches the details
+        once so a planning failure can still read them (e.g. the
+        ``gated`` flag) when it maps the error.
         """
-        details = self.hub.model_details(repo_id, revision)
         sha = str(details.get("sha") or "").strip()
         if not sha:
             raise PlanError("The repository revision could not be resolved to a commit.")
@@ -228,19 +255,156 @@ class DownloadManager:
             dry_run=True,
         )
 
-    def _submit(self, download_id: str) -> None:
+    def _submit(self, download_id: str) -> bool:
         with self._lock:
             if download_id in self._submitted:
-                return
+                return True
             self._submitted.add(download_id)
             self._cancel_events[download_id] = threading.Event()
-        self.executor.submit(self._run, download_id)
+        try:
+            self.executor.submit(self._run, download_id)
+        except RuntimeError:
+            # The pool is shutting down (server stop): the job stays
+            # queued in the database and the next start re-dispatches it.
+            with self._lock:
+                self._submitted.discard(download_id)
+                self._cancel_events.pop(download_id, None)
+            return False
+        return True
+
+    def _dispatch(self) -> None:
+        """Start queued jobs while transfer slots are free.
+
+        Jobs wait in the database as ``queued`` (not in the pool), so the
+        queue has a real, visible order: moved-to-front first, then
+        first-come. Every completion, pause, cancel, and new queue entry
+        funnels through here, which is what makes a pause backfill the
+        freed slot.
+        """
+        capacity = max(1, self.settings.max_concurrent_downloads)
+        while True:
+            with self._lock:
+                running = len(self._submitted)
+            if running >= capacity:
+                return
+            chosen = None
+            with self._lock:
+                for job in self.database.queued_downloads():
+                    if job["id"] not in self._submitted:
+                        chosen = job
+                        break
+            if chosen is None:
+                return
+            if not self._submit(chosen["id"]):
+                # The pool is gone (shutdown in progress): no further
+                # dispatch can succeed until the next start.
+                return
+
+    def pause(self, download_id: str) -> dict[str, Any] | None:
+        download = self.database.get_download(download_id)
+        if not download:
+            return None
+        status = download["status"]
+        if status not in {"queued", "preparing", "downloading"}:
+            raise ValueError(f"Download is already {status}.")
+        paused_at = now_iso()
+        if status == "queued":
+            # Never left the database: nothing is running to stop.
+            return self.database.update_download(
+                download_id, status="paused", speed_bps=0, updated_at=paused_at
+            )
+        # Same stop mechanics as cancel(); only the final state and the
+        # manifest behavior differ (see below). The worker thread owns
+        # the process wait, as it does for cancels.
+        with self._lock:
+            self._pause_requested.add(download_id)
+            cancel_event = self._cancel_events.setdefault(download_id, threading.Event())
+            cancel_event.set()
+            process = self._processes.get(download_id)
+            if process and process.poll() is None:
+                process.terminate()
+        # Unlike a cancel this writes no cancelled manifest: a paused
+        # copy is still a live copy, and a resume completes the same one.
+        target = Path(download["target_path"]) if download.get("target_path") else None
+        if target and target.is_dir():
+            partial_bytes, _, _ = directory_stats(target)
+        else:
+            partial_bytes = int(download.get("downloaded_bytes") or 0)
+        return self.database.update_download(
+            download_id,
+            status="paused",
+            downloaded_bytes=partial_bytes,
+            speed_bps=0,
+            error=None,
+            updated_at=paused_at,
+        )
+
+    def resume(self, download_id: str) -> dict[str, Any] | None:
+        download = self.database.get_download(download_id)
+        if not download or download["status"] != "paused":
+            return download
+        updated = self.database.update_download(
+            download_id, status="queued", error=None, updated_at=now_iso()
+        )
+        self._dispatch()
+        return updated
+
+    def pause_all(self) -> list[dict[str, Any]]:
+        paused: list[dict[str, Any]] = []
+        # Flip the queued ones first so no dispatch races a running pause
+        # for a slot; then stop the running ones.
+        for job in self.database.unfinished_downloads():
+            if job["status"] == "queued":
+                result = self.database.update_download(
+                    job["id"], status="paused", speed_bps=0, updated_at=now_iso()
+                )
+            else:
+                result = self.pause(job["id"])
+            if result:
+                paused.append(result)
+        return paused
+
+    def resume_all(self) -> list[dict[str, Any]]:
+        resumed: list[dict[str, Any]] = []
+        for job in self.database.paused_downloads():
+            result = self.resume(job["id"])
+            if result:
+                resumed.append(result)
+        return resumed
+
+    def restart(self, download_id: str) -> dict[str, Any] | None:
+        """Re-queue a failed job in place: same record, error cleared.
+
+        Files already on disk stay and the worker skips them, so the
+        retained bytes are kept and the progress bar starts fresh.
+        """
+        download = self.database.get_download(download_id)
+        if not download or download["status"] != "failed":
+            return download
+        updated = self.database.update_download(
+            download_id,
+            status="queued",
+            progress=0,
+            error=None,
+            completed_at=None,
+            updated_at=now_iso(),
+        )
+        self._dispatch()
+        return updated
+
+    def move_to_front(self, download_id: str) -> dict[str, Any] | None:
+        download = self.database.get_download(download_id)
+        if not download or download["status"] != "queued":
+            return download
+        updated = self.database.bump_download_priority(download_id)
+        self._dispatch()
+        return updated
 
     def cancel(self, download_id: str) -> dict[str, Any] | None:
         download = self.database.get_download(download_id)
         if not download:
             return None
-        if download["status"] not in {"queued", "preparing", "downloading"}:
+        if download["status"] not in {"queued", "preparing", "downloading", "paused"}:
             raise ValueError(f"Download is already {download['status']}.")
 
         cancelled_at = now_iso()
@@ -283,14 +447,16 @@ class DownloadManager:
         )
 
     def resume_unfinished(self) -> None:
-        for download in self.database.unfinished_downloads():
+        jobs = self.database.unfinished_downloads()
+        for download in jobs:
             self.database.update_download(
                 download["id"],
                 status="queued",
                 error=None,
                 updated_at=now_iso(),
             )
-            self._submit(download["id"])
+        if jobs:
+            self._dispatch()
 
     def _monitor(
         self,
@@ -472,6 +638,10 @@ class DownloadManager:
         try:
             download = self.database.get_download(download_id)
             if not download:
+                return
+            if download["status"] != "queued":
+                # Paused between dispatch and start: the job waits for a
+                # resume, and the slot frees in the finally block.
                 return
             self._raise_if_cancelled(cancel_event)
             repo_id = validate_repo_id(download["repo_id"])
@@ -661,7 +831,10 @@ class DownloadManager:
             )
         except DownloadCancelled:
             current = self.database.get_download(download_id)
-            if current and current["status"] != "cancelled":
+            # cancel() and pause() both write their final state before
+            # the worker teardown lands here; this only covers a stop
+            # that took effect before either could write.
+            if current and current["status"] not in ("cancelled", "paused"):
                 cancelled_at = now_iso()
                 target = Path(current["target_path"]) if current.get("target_path") else None
                 partial_bytes = directory_stats(target)[0] if target and target.is_dir() else 0
@@ -676,21 +849,9 @@ class DownloadManager:
                 )
         except Exception as error:
             current = self.database.get_download(download_id)
-            if current and current["status"] == "cancelled":
+            if current and current["status"] in ("cancelled", "paused"):
                 return
-            message = str(error).strip() or error.__class__.__name__
-            if attempts_made > 1:
-                message = f"failed after {attempts_made} attempts: {message}"
-            if "gated" in message.lower() or "401" in message or "403" in message:
-                message = (
-                    f"{message} Accept the model terms on Hugging Face and configure "
-                    "a read-only HF_TOKEN in .env."
-                )
-            # Keep the client's final words with the job (engine and the
-            # Xet log path were already recorded at run start).
-            metadata = dict(current.get("metadata") or {}) if current else {}
-            if isinstance(error, DownloadWorkerExit) and error.output:
-                metadata["output_tail"] = error.output
+            message, metadata = self._failure_message(error, current, attempts_made)
             self.database.update_download(
                 download_id,
                 status="failed",
@@ -705,6 +866,101 @@ class DownloadManager:
                 self._submitted.discard(download_id)
                 self._cancel_events.pop(download_id, None)
                 self._processes.pop(download_id, None)
+            # A finished job frees its transfer slot; the next queued job
+            # (move-to-front first, then first-come) takes it.
+            self._dispatch()
+
+    def _failure_message(
+        self,
+        error: Exception,
+        current: dict[str, Any] | None,
+        attempts_made: int,
+    ) -> tuple[str, dict[str, Any]]:
+        """Map a job failure to the message the row shows.
+
+        Gating is the one failure the app can explain: the frozen plan
+        records the repository's ``gated`` flag, and the Hub's own
+        401/403 replies say it too. A confirmed gate gets the definitive
+        wording; a bare 5xx gets the "if this model is gated" wording.
+        Everything else keeps the raw message.
+        """
+        message = str(error).strip() or error.__class__.__name__
+        # Keep the client's final words with the job (engine and the
+        # Xet log path were already recorded at run start).
+        metadata = dict(current.get("metadata") or {}) if current else {}
+        if isinstance(error, DownloadWorkerExit) and error.output:
+            metadata["output_tail"] = error.output
+        repo_id = (current or {}).get("repo_id", "")
+        if metadata.get("gated") or self._is_auth_error(error):
+            return self._gated_worker_message(repo_id, metadata.get("source_url")), metadata
+        code = self._http_error_code(message)
+        if code and code.startswith("5"):
+            return (
+                self._gated_possible_message(repo_id, metadata.get("source_url"), code),
+                metadata,
+            )
+        if attempts_made > 1:
+            message = f"failed after {attempts_made} attempts: {message}"
+        return message, metadata
+
+    @staticmethod
+    def _is_auth_error(error: Exception) -> bool:
+        text = f"{type(error).__name__}: {error}".lower()
+        markers = (
+            "401",
+            "403",
+            "unauthorized",
+            "forbidden",
+            "gated",
+            "accept the model terms",
+            "don't have permission",
+            "do not have permission",
+        )
+        return any(marker in text for marker in markers)
+
+    @staticmethod
+    def _http_error_code(message: str) -> str | None:
+        match = re.search(r"(?:status|HTTP)\s*(\d{3})\b", message, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        match = re.search(r"\b([45]\d{2})\b", message)
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _model_terms_url(repo_id: str, source_url: Any) -> str:
+        url = str(source_url or "").strip()
+        return url or f"https://huggingface.co/{repo_id}"
+
+    @classmethod
+    def _gated_access_message(cls, repo_id: str, details: dict[str, Any]) -> str:
+        # Copy #26: planning a gated repository the token cannot read.
+        link = cls._model_terms_url(repo_id, details.get("source_url"))
+        return (
+            "This repository is gated and the configured Hub token is not authorized. "
+            f"Accept the model's terms at {link}, then check the token in "
+            "Settings / Hub access."
+        )
+
+    @classmethod
+    def _gated_worker_message(cls, repo_id: str, source_url: Any) -> str:
+        # Copy #27: the transfer itself was refused on gate grounds.
+        link = cls._model_terms_url(repo_id, source_url)
+        return (
+            "This repository is gated and the configured Hub token is not authorized. "
+            f"Accept the model's terms at {link} and use an approved account's read "
+            "token (Settings / Hub access)."
+        )
+
+    @classmethod
+    def _gated_possible_message(cls, repo_id: str, source_url: Any, code: str) -> str:
+        # Copy #28: a 5xx says nothing about gating by itself, so the
+        # message offers it as the likely cause rather than asserting it.
+        link = cls._model_terms_url(repo_id, source_url)
+        return (
+            f"The Hub returned HTTP {code} while starting this download. "
+            f"If this model is gated, accept its terms at {link} and check the "
+            "Hub token in Settings / Hub access."
+        )
 
     def shutdown(self) -> None:
         self.executor.shutdown(wait=False, cancel_futures=False)

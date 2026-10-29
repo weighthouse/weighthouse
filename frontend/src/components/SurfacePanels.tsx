@@ -8,7 +8,9 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import {
   AlertTriangle,
+  Check,
   CloudDownload,
+  Copy,
   Download,
   ExternalLink,
   File,
@@ -486,6 +488,7 @@ export function LibraryConsole({
   const [deletePicked, setDeletePicked] = useState<Set<string>>(new Set())
   const [deletePhase, setDeletePhase] = useState<'idle' | 'loading' | 'ready'>('idle')
   const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [copiedId, setCopiedId] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [runtimeTargets, setRuntimeTargets] = useState<RuntimeTarget[]>([])
   const [runtimeTargetId, setRuntimeTargetId] = useState('')
@@ -699,6 +702,21 @@ export function LibraryConsole({
     })
   }
 
+  function setDeletePickedAll(checked: boolean) {
+    if (!deletion) return
+    setDeletePicked(checked ? new Set(deletableRows(deletion).map((row) => row.path)) : new Set())
+  }
+
+  async function copyRepoId() {
+    try {
+      await navigator.clipboard.writeText(details.model.repo_id)
+      setCopiedId(true)
+      window.setTimeout(() => setCopiedId(false), 1500)
+    } catch {
+      onToast('Unable to copy the repository id.', 'error')
+    }
+  }
+
   async function deleteWholeCopy() {
     if (!deletion) return
     if (!copyDeletionConfirmed(deletion, deleteConfirm)) return
@@ -887,13 +905,19 @@ export function LibraryConsole({
           >
             {deletePhase === 'loading'
               ? <LoaderCircle size={14} className="spin" />
-              : <Trash2 size={14} />}
+              : deletePhase === 'ready'
+                ? <RefreshCw size={14} />
+                : <Trash2 size={14} />}
             {deletePhase === 'loading' ? 'Inspecting…' : deletePhase === 'ready' ? 'Refresh' : 'Choose what to remove'}
           </button>
         </div>
         {deleteError && <div className="inline-error">{deleteError}</div>}
         {deletion && deletePhase === 'ready' && details.model.storage_backend !== 's3' && (
           <div className="updates-body">
+            <div className="delete-pick-tools">
+              <button type="button" className="secondary-button compact" onClick={() => setDeletePickedAll(true)}>All</button>
+              <button type="button" className="secondary-button compact" onClick={() => setDeletePickedAll(false)}>None</button>
+            </div>
             <div className="update-rows">
               {deletion.tracked.map((row) => (
                 <label key={row.path} className="update-row">
@@ -949,6 +973,10 @@ export function LibraryConsole({
               autoComplete="off"
             />
           </label>
+          <button type="button" className="secondary-button compact" onClick={copyRepoId}>
+            {copiedId ? <Check size={13} /> : <Copy size={13} />}
+            {copiedId ? 'Copied' : 'Copy'}
+          </button>
           <button
             type="button"
             className="cancel-download-button"

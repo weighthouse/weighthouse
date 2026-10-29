@@ -10,8 +10,6 @@ licenses:
 
 - React, React Router, and related frontend libraries — MIT
 - FastAPI, Uvicorn, and huggingface-hub (backend) — MIT-style licenses
-- PostgreSQL and S3-compatible service software run separately are not
-  distributed by this project.
 
 Typography and icon assets (IBM Plex, Bricolage Grotesque, Lucide) remain under
 their respective licenses.

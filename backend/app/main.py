@@ -741,16 +741,104 @@ def watch_ensure_for_user(repo_id: str, user_id: str) -> dict[str, Any]:
         clock=utc_iso,
     )
 
-@app.post("/api/downloads/{download_id}/cancel")
-def cancel_download(download_id: str, user: AgentQueue) -> dict:
+class ClearDownloadsRequest(BaseModel):
+    ids: list[str] = Field(default_factory=list)
+
+
+def _get_download_or_404(download_id: str, user: dict[str, Any]) -> dict:
     existing = database.get_download(download_id)
     if not existing or not can_access_download(existing, user):
         raise HTTPException(status_code=404, detail="Download not found")
+    return existing
+
+
+_DOWNLOAD_LIVE_STATUSES = {"queued", "preparing", "downloading", "paused"}
+
+
+@app.post("/api/downloads/{download_id}/cancel")
+def cancel_download(download_id: str, user: AgentQueue) -> dict:
+    _get_download_or_404(download_id, user)
     try:
-        download = downloads.cancel(download_id)
+        return downloads.cancel(download_id)
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/downloads/{download_id}/pause")
+def pause_download(download_id: str, user: AgentQueue) -> dict:
+    _get_download_or_404(download_id, user)
+    try:
+        return downloads.pause(download_id)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/downloads/{download_id}/resume")
+def resume_download(download_id: str, user: AgentQueue) -> dict:
+    _get_download_or_404(download_id, user)
+    download = downloads.resume(download_id)
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+    if download["status"] != "queued":
+        raise HTTPException(status_code=409, detail="Only paused downloads can be resumed.")
     return download
+
+
+@app.post("/api/downloads/pause-all")
+def pause_all_downloads(user: AgentQueue) -> dict:
+    return {"paused": downloads.pause_all()}
+
+
+@app.post("/api/downloads/resume-all")
+def resume_all_downloads(user: AgentQueue) -> dict:
+    return {"resumed": downloads.resume_all()}
+
+
+@app.post("/api/downloads/{download_id}/restart")
+def restart_download(download_id: str, user: AgentQueue) -> dict:
+    _get_download_or_404(download_id, user)
+    download = downloads.restart(download_id)
+    if not download or download["status"] != "queued":
+        raise HTTPException(status_code=409, detail="Only failed downloads can be restarted.")
+    return download
+
+
+@app.post("/api/downloads/{download_id}/move-to-front")
+def move_download_to_front(download_id: str, user: AgentQueue) -> dict:
+    _get_download_or_404(download_id, user)
+    download = downloads.move_to_front(download_id)
+    if not download or download["status"] != "queued":
+        raise HTTPException(
+            status_code=409, detail="Only queued downloads can be moved."
+        )
+    return download
+
+
+@app.delete("/api/downloads/{download_id}")
+def delete_download(download_id: str, user: AgentQueue) -> dict:
+    existing = _get_download_or_404(download_id, user)
+    if existing["status"] in _DOWNLOAD_LIVE_STATUSES:
+        raise HTTPException(
+            status_code=409, detail="This download is still active; cancel it first."
+        )
+    database.delete_download(download_id)
+    return {"deleted": True}
+
+
+@app.post("/api/downloads/clear")
+def clear_downloads(payload: ClearDownloadsRequest, user: AgentQueue) -> dict:
+    """Remove history records for the given ids. Files on disk stay;
+    the Delete panel manages those."""
+    deleted = 0
+    for job_id in list(dict.fromkeys(payload.ids))[:500]:
+        download = database.get_download(job_id)
+        if not download or not can_access_download(download, user):
+            continue
+        if download["status"] in _DOWNLOAD_LIVE_STATUSES:
+            continue
+        if database.delete_download(job_id):
+            deleted += 1
+    return {"deleted": deleted}
 
 @app.get("/api/local-models")
 def local_models(

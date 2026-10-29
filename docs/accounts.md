@@ -1,12 +1,12 @@
 # Accounts and uploads
 
-Accounts are local to the installation. There is no hosted identity service and no account data leaves the server. The first browser visit creates the owner account; the owner creates member accounts from Settings.
+Accounts are local to the installation. There is no hosted identity service and no account data leaves the server. The first browser visit prompts the user to create the owner account; the owner creates member accounts from Settings.
 
 Each member has a separate saved-model library, notes, collections, and download history. Passwords are changed from Settings; rotating a password signs out the account's other sessions.
 
 ## Saved models, notes, collections
 
-The heart on a Hub model saves it without downloading. Saved models can be organized into collections — a project shortlist, a target rig. Notes are per-model threads: private to their author until shared with the other members of the installation.
+The heart on a Hub model saves it without downloading. Saved models can be organized into collections — a project shortlist, a target rig, etc. Notes are per-model threads: private to their author until shared with the other members of the installation.
 
 ## Uploads
 

@@ -178,6 +178,7 @@ DOWNLOAD_FIELDS = {
     "metadata_json",
     "updated_at",
     "completed_at",
+    "priority",
 }
 
 RUNTIME_JOB_FIELDS = {
@@ -328,7 +329,8 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     completed_at TEXT,
-                    user_id TEXT REFERENCES users(id) ON DELETE SET NULL
+                    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+                    priority INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_downloads_status
@@ -459,6 +461,13 @@ class Database:
                 connection.execute(
                     "ALTER TABLE downloads ADD COLUMN user_id TEXT "
                     "REFERENCES users(id) ON DELETE SET NULL"
+                )
+            if "priority" not in columns:
+                # Queue position: higher goes first, ties keep
+                # first-come order. "Move to front" sets it.
+                connection.execute(
+                    "ALTER TABLE downloads ADD COLUMN priority INTEGER "
+                    "NOT NULL DEFAULT 0"
                 )
             local_model_columns = self._column_names(connection, "local_models")
             if "storage_backend" not in local_model_columns:
@@ -1209,11 +1218,14 @@ class Database:
         return [self._decode_row(row) for row in rows]
 
     def find_active_download(self, repo_id: str) -> dict[str, Any] | None:
+        # A paused job still owns its target directory: moves, deletes,
+        # and new queues for the same repository wait on it (or resume it).
         with self.connect() as connection:
             row = connection.execute(
                 """
                 SELECT * FROM downloads
-                WHERE repo_id = ? AND status IN ('queued', 'preparing', 'downloading')
+                WHERE repo_id = ?
+                    AND status IN ('queued', 'preparing', 'downloading', 'paused')
                 ORDER BY created_at DESC LIMIT 1
                 """,
                 (repo_id,),
@@ -1221,11 +1233,61 @@ class Database:
         return self._decode_row(row)
 
     def unfinished_downloads(self) -> list[dict[str, Any]]:
+        # Paused jobs are deliberately excluded: a pause survives a server
+        # restart instead of silently re-starting the transfer.
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM downloads WHERE status IN ('queued', 'preparing', 'downloading')"
             ).fetchall()
         return [self._decode_row(row) for row in rows]
+
+    def queued_downloads(self) -> list[dict[str, Any]]:
+        """The queue in dispatch order: moved-to-front first, then FIFO."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM downloads
+                WHERE status = 'queued'
+                ORDER BY priority DESC, created_at ASC
+                """
+            ).fetchall()
+        return [self._decode_row(row) for row in rows]
+
+    def paused_downloads(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM downloads WHERE status = 'paused'"
+            ).fetchall()
+        return [self._decode_row(row) for row in rows]
+
+    def delete_download(self, download_id: str) -> bool:
+        """Remove the history record. Files on disk are untouched; the
+        Delete panel manages those."""
+        with self._write_lock, self.connect() as connection:
+            result = connection.execute(
+                "DELETE FROM downloads WHERE id = ?", (download_id,)
+            )
+            deleted = getattr(result, "rowcount", None)
+            if deleted is None:
+                return self.get_download(download_id) is None
+            return deleted > 0
+
+    def bump_download_priority(self, download_id: str) -> dict[str, Any] | None:
+        """One above the highest queued priority, so the job leads the
+        queue (and starts immediately if a transfer slot is free)."""
+        with self._write_lock, self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE downloads
+                SET priority = (
+                        SELECT COALESCE(MAX(priority), 0) + 1
+                        FROM downloads WHERE status = 'queued'
+                    )
+                WHERE id = ? AND status = 'queued'
+                """,
+                (download_id,),
+            )
+        return self.get_download(download_id)
 
     def create_runtime_job(self, record: dict[str, Any]) -> dict[str, Any]:
         with self._write_lock, self.connect() as connection:
@@ -1482,6 +1544,7 @@ class Database:
     LOCAL_MODEL_SORTS = {
         "repo_id": "local_models.repo_id",
         "size_bytes": "local_models.size_bytes",
+        "parameter_count": "local_models.parameter_count",
         "file_count": "local_models.file_count",
         "modified_at": "local_models.modified_at",
         "downloaded_at": "local_models.downloaded_at",

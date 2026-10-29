@@ -25,7 +25,7 @@ def _boolean(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("APP_NAME", BRAND.display_name)
-    app_version: str = os.getenv("APP_VERSION", "1.2.0")
+    app_version: str = os.getenv("APP_VERSION", "1.3.0")
     model_storage: Path = Path(os.getenv("MODEL_STORAGE", "/models")).expanduser().resolve()
     model_storage_backend: str = os.getenv("MODEL_STORAGE_BACKEND", "filesystem").strip().lower()
     data_dir: Path = Path(os.getenv("DATA_DIR", "/data")).expanduser().resolve()

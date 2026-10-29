@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Download, Eye, LoaderCircle } from 'lucide-react'
 import { api } from '../api'
-import type { DownloadMode, HubFile, HubModelDetails } from '../types'
+import type { DownloadJob, DownloadMode, HubFile, HubModelDetails } from '../types'
 import { formatBytes } from '../utils'
 
 // Download-mode pattern semantics are owned by the backend planner
@@ -97,6 +97,7 @@ export function DownloadZone({
   onRevisionChange,
   watched,
   watchTouched,
+  activeJob,
 }: {
   repoId: string
   model: HubModelDetails
@@ -105,6 +106,7 @@ export function DownloadZone({
   onRevisionChange: (revision: string) => void
   watched: boolean
   watchTouched: boolean
+  activeJob?: DownloadJob | null
 }) {
   const [mode, setMode] = useState<DownloadMode>('full')
   const [ggufPath, setGgufPath] = useState('')
@@ -115,6 +117,10 @@ export function DownloadZone({
   const [touched, setTouched] = useState(false)
   const [queuing, setQueuing] = useState(false)
   const [error, setError] = useState('')
+  // While a job for this repository is live, the button reports it and
+  // stays disabled; the Downloads page owns the queue controls.
+  const liveJob =
+    activeJob && ['queued', 'preparing', 'downloading'].includes(activeJob.status) ? activeJob : null
 
   // A fresh page visit resets the form; the payload drives the
   // default quantization choice.
@@ -325,9 +331,28 @@ export function DownloadZone({
         </label>
 
         <div className="download-foot">
-          <button type="button" className="download-button" onClick={queue} disabled={queuing || effectiveSet.size === 0}>
-            {queuing ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}
-            {queuing ? 'Adding to queue…' : model.local ? 'Pull latest revision' : 'Start download'}
+          <button
+            type="button"
+            className="download-button"
+            onClick={queue}
+            disabled={queuing || effectiveSet.size === 0 || liveJob !== null}
+          >
+            {liveJob && liveJob.status !== 'queued'
+              ? <LoaderCircle size={15} className="spin" />
+              : queuing
+                ? <LoaderCircle size={15} className="spin" />
+                : <Download size={15} />}
+            {liveJob
+              ? liveJob.status === 'queued'
+                ? 'Queued'
+                : liveJob.payload.update_merge
+                  ? 'Updating…'
+                  : 'Downloading…'
+              : queuing
+                ? 'Adding to queue…'
+                : model.local
+                  ? 'Pull latest revision'
+                  : 'Start download'}
           </button>
           <span className="est">{effectiveFiles.length} files / {formatBytes(estimatedBytes)}</span>
         </div>

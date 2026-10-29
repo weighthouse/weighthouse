@@ -1,23 +1,23 @@
 # Agents
 
-ModelHarbor exposes an MCP endpoint and a set of API keys so that local agents can search the Hub, watch the library, and manage model files against the same installation, under the same rules as the web application.
+ModelHarbor exposes an MCP endpoint and a set of API keys so that local agents can search the Hub, watch the library, and manage model files.
 
 Both live in **Settings → Agent API keys**. Only administrators can create keys.
 
 ## Creating a key
 
-Give the key a name and the scopes it needs, then `Create agent key`. The token is shown once — `ak_…` — and only its last four characters are kept.
+Give the key a name and the scopes it needs, then `Create agent key`. The token is shown once — `ak_…` — and only its last four characters are kept. Make sure you copy this key to a safe location before dismissing it.
 
 | Scope | Grants |
 |---|---|
 | `search` | Discover repositories on the Hub. |
 | `read` | Read the library: copies, files, update diffs, verify reports, locations, download state. |
-| `queue` | Ask the library to fetch: downloads, updates, restores, runtime dispatch. |
+| `queue` | Ask the library to fetch: downloads, updates, restores. |
 | `mutate` | Change stored content: deletions, moves, cache eviction, storage scans. |
 
-Revoke a key to stop it immediately; the revoked entry stays on record until a permanent delete removes it together with its request history.
+Revoke a key to stop it immediately; the revoked entry stays on record until a permanent delete removes both the key and its request history.
 
-Keys are minted by administrators and carry the creating account's identity, so requests made through a key act as that account. At most 64 keys are active at any time, per installation; revoking or deleting a key frees its slot.
+Keys are minted by administrators and carry the creating account's identity, so requests made through a key act as that account. A maximum of 64 keys can be active at any time, per installation; revoking or deleting a key frees its slot.
 
 ## MCP endpoint
 

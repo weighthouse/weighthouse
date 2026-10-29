@@ -1,9 +1,6 @@
 # Deployment
 
-Every deployment runs the same container image and keeps its state in two
-host directories: one for model files, one for the `/data` state directory
-(SQLite database, download cache, uploads). Pick the route that matches the
-host; none of them require more than Docker and these two directories.
+Every deployment keeps its state in two host directories: one for model files, one for the `/data` state directory (SQLite database, download cache, uploads).
 
 ## Route 1 — Compose directory (servers)
 
@@ -36,7 +33,7 @@ the browser) and stop. Copy the whole repository directory, or use Route 1
 plus these helpers; they work from any directory containing
 `docker-compose.yml`.
 
-## Route 3 — Source checkout (development)
+## Route 3 — Source checkout
 
 Clone the repository, then either build outright:
 
@@ -53,7 +50,6 @@ or run the backend and frontend directly — see
   Forgejo) requires the host daemon to trust it:
   `{"insecure-registries": ["registry-host:port"]}` in `/etc/docker/daemon.json`,
   then restart Docker.
-- State lives in the two host directories. Back them up; nothing about an
-  upgrade or container replacement touches them.
+- State lives in the two host directories. Back them up; upgrades or container replacements don't touch.
 - `MODEL_STORAGE_PATH` is bind-mounted read-write at `/models` in the
-  container. Every copy ModelHarbor indexes lives there.
+  container. Every model ModelHarbor indexes lives there.

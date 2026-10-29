@@ -145,6 +145,35 @@ export const api = {
     request<DownloadJob>(`/api/downloads/${encodeURIComponent(downloadId)}/cancel`, {
       method: 'POST',
     }),
+  pauseDownload: (downloadId: string) =>
+    request<DownloadJob>(`/api/downloads/${encodeURIComponent(downloadId)}/pause`, {
+      method: 'POST',
+    }),
+  resumeDownload: (downloadId: string) =>
+    request<DownloadJob>(`/api/downloads/${encodeURIComponent(downloadId)}/resume`, {
+      method: 'POST',
+    }),
+  pauseAllDownloads: () =>
+    request<{ paused: DownloadJob[] }>('/api/downloads/pause-all', { method: 'POST' }),
+  resumeAllDownloads: () =>
+    request<{ resumed: DownloadJob[] }>('/api/downloads/resume-all', { method: 'POST' }),
+  restartDownload: (downloadId: string) =>
+    request<DownloadJob>(`/api/downloads/${encodeURIComponent(downloadId)}/restart`, {
+      method: 'POST',
+    }),
+  moveDownloadToFront: (downloadId: string) =>
+    request<DownloadJob>(`/api/downloads/${encodeURIComponent(downloadId)}/move-to-front`, {
+      method: 'POST',
+    }),
+  deleteDownload: (downloadId: string) =>
+    request<{ deleted: boolean }>(`/api/downloads/${encodeURIComponent(downloadId)}`, {
+      method: 'DELETE',
+    }),
+  clearDownloads: (ids: string[]) =>
+    request<{ deleted: number }>('/api/downloads/clear', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   localModels: (query = '', params: URLSearchParams = new URLSearchParams()) => {
     if (query) params.set('query', query)
     return request<{

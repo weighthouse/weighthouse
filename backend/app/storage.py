@@ -9,9 +9,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 from urllib.parse import urlsplit, urlunsplit
 
-from .brand import BRAND
 from .config import Settings, repository_path, validate_repo_id
 from .indexer import UNSAFE_EXTENSIONS
+from .library_files import LEGACY_PART_SUFFIXES, PART_SUFFIX
 from .manifests import (
     LEGACY_MANIFEST_FILENAME,
     MANIFEST_FILENAMES,
@@ -22,9 +22,9 @@ from .manifests import (
 
 
 # Transient partial files. The first suffix is what this code writes; the
-# legacy upstream names are recognized so interrupted transfers from the
-# upstream project are never synced or indexed as content.
-PART_SUFFIXES = (BRAND.part_suffix, ".hugginghack-part", ".hugginghack-s3-part")
+# legacy names are recognized so interrupted transfers from older versions
+# are never synced or indexed as content.
+PART_SUFFIXES = (PART_SUFFIX, *LEGACY_PART_SUFFIXES)
 
 
 def _iso(value: Any) -> str:
@@ -463,7 +463,7 @@ class S3ModelStorage(FilesystemModelStorage):
                 if root != resolved_parent and root not in resolved_parent.parents:
                     raise ValueError("S3 object key escapes the repository cache.")
                 target.parent.mkdir(parents=True, exist_ok=True)
-                partial = target.with_name(f".{target.name}{BRAND.part_suffix}")
+                partial = target.with_name(f".{target.name}{PART_SUFFIX}")
                 if target.is_symlink() or partial.is_symlink():
                     raise ValueError("S3 restore cannot overwrite a symbolic link.")
                 self.client.download_file(

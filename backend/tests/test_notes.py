@@ -1,11 +1,6 @@
-"""Model notes (D14): author-private threads with a deliberate share step.
-
-The mechanism under test is the visibility matrix, and every case in it
-is a promise to the owner: private notes belong to their author until
-the author flips the thread's share toggle; shared entries carry their
-author's name; the admin's ruled power is seeing everything, not
-touching it. Pin is exclusive per author within a thread —
- pinning never releases somebody else's pin.
+"""Model notes: author-private threads with an explicit share step;
+pin is exclusive per author within a thread; the admin reads every
+thread. The visibility matrix is what's under test.
 """
 
 from __future__ import annotations
@@ -208,7 +203,7 @@ def test_creating_with_pin_releases_the_prior_pin(database: Database):
 
 
 # ---------------------------------------------------------------------
-# Search: note bodies are indexed into library search (D14)
+# Search: note bodies are indexed into library search
 # ---------------------------------------------------------------------
 
 def test_search_hits_respect_privacy_and_carry_the_author(database: Database):

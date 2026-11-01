@@ -54,36 +54,16 @@ S3_USE_SSL=false
 
 Static keys are optional on AWS — boto3's credential chain, including attached IAM roles, works. The bucket identity needs `s3:ListBucket` on the bucket and `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on the prefix.
 
-Downloads and finalized uploads sync automatically. The manifest is written last, so a partially transferred repository is not indexed as complete. From the model page a cache copy can be evicted while the durable S3 copy stays, and restored when a tool needs the files again.
+Downloads and finalized uploads are synced automatically. We write the manifest last, so a partial transfer isn't indexed as if it were complete.
 
 ## Moving a deployment to another host
 
-Copy the deployment directory (compose file, `.env`, model folder, `data` folder) and adjust `MODEL_STORAGE_PATH`. Synology Container Manager does not always create missing bind-mount sources, so create both directories before starting:
-
-```bash
-mkdir -p /volume1/docker/modelharbor/models
-mkdir -p /volume1/docker/modelharbor/data
-```
-
-Common paths:
-
-```dotenv
-# Synology
-MODEL_STORAGE_PATH=/volume1/AI/models
-
-# TrueNAS
-MODEL_STORAGE_PATH=/mnt/tank/ai/models
-
-# QNAP
-MODEL_STORAGE_PATH=/share/Container/models
-```
-
-If the NAS enforces Unix ownership, set the user and group IDs in `.env` (`PUID`, `PGID` — `id your-nas-user` shows them over SSH), then `docker compose up -d`.
+Copy the deployment directory (compose file, `.env`, model folder, `data` folder) and adjust `MODEL_STORAGE_PATH`.
 
 ## What to back up
 
 - Model files: `MODEL_STORAGE_PATH` (and the S3 bucket when enabled).
-- Accounts, sessions, saved models, collections, repository ownership, upload manifests, download history, and the local index: the `data` directory — `data/modelharbor.sqlite3` by default, or the database named by `DATABASE_URL`.
+- Accounts, sessions, saved models, collections, repository ownership, upload manifests, download history, and the local index: the `data` directory — `data/library.sqlite3` by default (an older `data/modelharbor.sqlite3` is migrated into it automatically), or the database named by `DATABASE_URL`.
 - Hub metadata cache: `data/hub-cache`.
 
 Back up the model folder and the database together. The model index can be rebuilt from the files, but the database is the only copy of accounts and ownership. Its bytes include password and session hashes, so store backups where those are safe.

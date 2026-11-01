@@ -16,11 +16,19 @@ export interface ObjectStorageHealth {
   error?: string | null
 }
 
+export interface LibraryDbHealth {
+  active_file: string | null
+  legacy_file: string | null
+  legacy_mtime: number | null
+  legacy_bytes: number | null
+}
+
 export interface Health {
   status: string
   app: string
   version: string
   database_backend: 'sqlite' | 'postgresql'
+  library_db: LibraryDbHealth | null
   storage: StorageHealth
   object_storage: ObjectStorageHealth
   hf_token_configured: boolean

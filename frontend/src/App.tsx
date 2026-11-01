@@ -120,8 +120,7 @@ const taskOptions = [
   ['automatic-speech-recognition', 'Speech Recognition'],
 ]
 
-// Sort labels (D16): human words for the whitelisted columns the
-// backend actually sorts by.
+// Human labels for the whitelisted sort columns.
 const columnLabels: Record<LibrarySort, string> = {
   repo_id: 'Name',
   size_bytes: 'Size',
@@ -2035,6 +2034,26 @@ function SettingsPage({
               k="Metadata database"
               v={health ? (health.database_backend === 'postgresql' ? 'PostgreSQL' : 'SQLite') : 'Reading…'}
             />
+            {health?.library_db?.legacy_file && (
+              <SettingRow
+                k="Library backup present"
+                v={
+                  <>
+                    This library was migrated from <code>{health.library_db.legacy_file}</code>{' '}
+                    (last written{' '}
+                    {health.library_db.legacy_mtime
+                      ? new Date(health.library_db.legacy_mtime * 1000).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : 'unknown'}
+                    , {health.library_db.legacy_bytes != null ? formatBytes(health.library_db.legacy_bytes) : 'unknown size'}
+                    ). The original file is kept intact as a backup, feel free to delete it whenever you're ready.
+                  </>
+                }
+              />
+            )}
             {health?.object_storage.enabled && (
               <>
                 <SettingRow

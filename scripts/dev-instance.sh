@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Disposable local ModelHarbor instance for visual verification.
+# Disposable local Weighthouse instance for visual verification.
 # Boots on :8321 against a throwaway data dir and seeded model storage,
 # creates the owner account, and indexes the seeded repositories.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-export MODELHARBOR_DEV=1
+export WEIGHTHOUSE_DEV=1
 export PORT="${PORT:-8321}"
 export DATA_DIR="$(pwd)/.devdata"
 export MODEL_STORAGE="$(pwd)/.devmodels"

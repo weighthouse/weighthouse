@@ -1,8 +1,6 @@
-"""Per-user preferences (D15): one database row per account, written
-through an explicit contract and nothing else. The doctrine under test:
-settings belong to the user in the database — deployment configuration
-stays in the environment, and no preset is ever seeded. A new account's
-empty object is meaningful: the interface decides its own defaults.
+"""Preferences: one row per account, written through the allowlist and
+nothing else. Deployment configuration stays in the environment; no
+presets are seeded — a new account starts with an empty object.
 """
 
 from __future__ import annotations

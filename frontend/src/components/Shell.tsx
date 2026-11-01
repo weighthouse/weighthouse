@@ -47,10 +47,9 @@ export default function Shell({ children, activeDownloads, staleWatches, user, o
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
-    // Runtime dispatch is a deliberately dormant feature: the nav entry
-    // stays hidden until at least one target is configured server-side.
-    // An unknown count (health request failed) degrades to showing the
-    // admin entry, same as before.
+    // Runtime dispatch stays hidden until at least one target is
+    // configured server-side; an unknown count (health request failed)
+    // degrades to the admin entry, same as before.
     let ignore = false
     api
       .health()

@@ -1,19 +1,18 @@
-"""Persistence-contract attestation (Pillar 7).
+"""Persistence invariants.
 
 The library — model files plus their manifests — is the durable truth; the
-database and the application are disposable. These tests pin that contract:
+database and the application are disposable. These tests pin that:
 
 * Nuking the database and rescanning restores an equivalent index.
 * Manifest schemas have versioned literal fixtures; the reader keeps
-  accepting the legacy upstream shape (decision D9) and the current v2
-  shape must never regress.
-* A frozen plan stored in a job payload (a literal fixture) still
-  rebuilds into the planner's object model.
+  accepting the legacy upstream shape, and the current v2 shape must
+  never regress.
+* A frozen plan stored in a job payload still rebuilds into the
+  planner's object model.
 
-The fixtures below are written on disk by hand (not through the writing
+The fixtures are written on disk by hand (not through the writing
 helpers) so they represent manifests as a previous writer would leave
-them. Future schema changes must extend these fixtures deliberately
-rather than silently drifting.
+them.
 """
 
 from __future__ import annotations

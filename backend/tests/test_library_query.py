@@ -1,9 +1,7 @@
-"""Library query system (D16): the facet rail is computed from the actual
-library — what this viewer can see, narrowed by the search text — and
-favorited/watching are the only built-in filter concepts. Everything
-else on the rail is a value that exists on disk right now. Sorting is
-server-side over a declared column whitelist; nothing user-controlled
-ever reaches the SQL as text.
+"""Library query: the facet rail counts over what this viewer can see,
+narrowed by the search text; favorited and watching are the only
+built-in filter concepts. Sorting is server-side over a declared column
+whitelist; nothing user-controlled reaches the SQL as text.
 """
 
 from __future__ import annotations

@@ -1,10 +1,6 @@
-"""Model card snapshots (D17): a card is pinned to the sha on disk.
-
-The rule the owner ruled: what the model page shows must be accurate as
-to the version they have on disk — so the stored card is keyed by the
-copy's locked sha, nothing refetches while the copy hasn't moved, an
-upstream failure leaves the card absent rather than stale, and the
-snapshot cache keeps only a rolling recent set of revisions.
+"""Model card snapshots: the stored card is keyed by the copy's locked
+sha; nothing refetches while the copy hasn't moved, and an upstream
+failure leaves the card absent rather than stale.
 """
 
 from __future__ import annotations

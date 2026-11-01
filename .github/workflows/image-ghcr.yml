@@ -19,7 +19,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/toks-love/modelharbor
+  IMAGE: ghcr.io/weighthouse/weighthouse
 
 jobs:
   build-test-publish:
@@ -39,7 +39,7 @@ jobs:
             ROLLING=false
           else
             echo "IMAGE_TAG=main" >> "$GITHUB_ENV"
-            echo "APP_VERSION_ARG=1.2.0-main-$SHORT_SHA" >> "$GITHUB_ENV"
+            echo "APP_VERSION_ARG=2.0.0-main-$SHORT_SHA" >> "$GITHUB_ENV"
             ROLLING=true
           fi
           echo "ROLLING=$ROLLING" >> "$GITHUB_ENV"

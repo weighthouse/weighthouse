@@ -8,10 +8,10 @@ import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .brand import BRAND
 from .config import Settings, validate_repo_id
 from .database import Database
 from .indexer import LocalModelIndexer, directory_stats, utc_now
+from .library_files import PART_SUFFIX
 from .manifests import MANIFEST_FILENAMES, read_manifest, write_manifest
 from .storage import FilesystemModelStorage
 
@@ -19,7 +19,6 @@ from .storage import FilesystemModelStorage
 SLUG_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
 RESERVED_FILENAMES = set(MANIFEST_FILENAMES)
 RESERVED_PARTS = {".git", ".cache", "__pycache__"}
-PART_SUFFIX = BRAND.part_suffix
 
 
 def validate_slug(value: str) -> str:

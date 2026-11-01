@@ -1,22 +1,16 @@
 """Named storage locations.
 
-Charter decision D3 deliberately does not bake in a storage topology:
-no assumption of a NAS, no assumption of two tiers. Locations are how
-"the library lives in N places" becomes concrete without rebuilding the
-product around a fixed idea of a tier. A location is a *name you chose*
-plus an absolute root path — nothing more. Any serving-tier labels live
-in the names themselves ("nvme-rig", "nas-archive"), not in a schema the
-app enforces.
+An administrator-declared allowlist (`LOCATIONS_JSON`): nobody types
+paths into a UI — every root the app will ever touch is declared up
+front, which keeps path confinement structural. `MODEL_STORAGE` is
+always registered, implicitly as ``primary`` or under the declared name
+of whatever entry points at the same root. A location is a name the
+administrator chose plus an absolute root path; serving-tier labels
+live in the names ("nvme-rig", "nas-archive"), not in a schema.
 
-Locations are an administrator-declared allowlist (`LOCATIONS_JSON`).
-Nobody types paths into a UI; every root the app will ever touch is
-declared in configuration up front, which keeps path confinement
-structural. The `MODEL_STORAGE` root is always registered — implicitly
-as ``primary``, or under the declared name of whatever entry points at
-the same root.
-
-Parsing fails loudly with precise messages: a typo that silently drops
-a location would be worse than a startup that refuses to begin.
+Parsing is eager and fails loudly with precise messages: a typo that
+silently drops a location is worse than a startup that refuses to
+begin.
 """
 
 from __future__ import annotations

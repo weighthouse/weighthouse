@@ -1,9 +1,7 @@
-"""Watch: the subscription, its honest baseline, and its self-healing.
-
-Pins charter D13 mechanics without any policy machinery: watching
-captures a baseline (the copy's revision, or the upstream revision at
-subscribe time for copy-less watches), drift is what the poller
-records, and agreement heals the indication.
+"""Watch mechanics: subscribing captures a baseline (the copy's
+revision, or the upstream revision at subscribe time for copy-less
+watches), drift is what the poller records, and agreement heals the
+indication.
 """
 
 from __future__ import annotations

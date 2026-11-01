@@ -15,12 +15,13 @@ cannot legitimately use.
 import nh3
 
 # Mirrors the frontend's render schema (frontend/src/modelCard.ts):
-# link protocols [http, https, irc, ircs, mailto, xmpp] and an
-# attribute set with no event handlers, no styles, no srcset.
+# same link protocols and an attribute set with no event handlers,
+# no styles, no srcset.
 _URL_SCHEMES = {"http", "https", "mailto", "irc", "ircs", "xmpp"}
 
-_TAGS = set(nh3.ALLOWED_TAGS)  # GitHub-flavored defaults; script, style,
-# iframe, object, embed, form, and friends are not members.
+_TAGS = set(nh3.ALLOWED_TAGS)  # GitHub-flavored defaults
+# iframe, object, embed, and form are excluded because the blocklist has
+# no catch-all; additions must be explicit.
 
 _ATTRIBUTES = dict(nh3.ALLOWED_ATTRIBUTES)
 # The card renderer resolves links through the card's own revision, so

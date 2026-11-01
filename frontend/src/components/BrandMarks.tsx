@@ -1,26 +1,37 @@
 /**
- * Brand marks.
+ * `BrandMark` is this product's own mark — flat shapes, single color, no
+ * outlines — drawn with `currentColor` so it follows the app theme.
  *
- * `BrandMark` is this product's own mark — a flat sailboat drawn from the
- * same geometric language as the toks.love house style (flat shapes, single
- * color, no outlines). It is deliberately *not* a toks.love mark; it uses
- * currentColor so it follows the app theme automatically.
- *
- * `MadeByToks` is the toks.love heart, used strictly inside the attribution
- * phrase "made by toks.<heart>" (the clean heart — the slash version was
- * maintenance-page signage). Per the brand charter, the heart belongs to
- * toks.love and appears nowhere else in this app.
+ * `MadeByToks` renders the toks.love heart, used only inside the
+ * attribution phrase; the heart is toks.love's mark and appears nowhere
+ * else in this app.
  */
 
 export function BrandMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" fill="currentColor" className={className} aria-hidden="true" focusable="false">
-      {/* hull: circle segment */}
-      <path d="M 17 36 L 49 36 A 16 16 0 0 1 17 36 Z" />
-      {/* sail */}
-      <path d="M 34 8 L 52 29 L 34 29 Z" />
-      {/* mast */}
-      <rect x="32.5" y="8" width="3" height="21" rx="1.5" />
+      <defs>
+        <mask id="wh-mark-inline">
+          <rect width="64" height="64" fill="#000" />
+          <path fill="#fff" d="M32 6.5 L57.4 25.4 V56.5 H6.6 V25.4 Z" />
+          <path
+            fill="#000"
+            d="M10.8 28.7 H53.2 V31.7 H10.8 Z
+              M13.5 31.7 L14.25 31.7 L9.0 37.6 L8.35 37.6 Z
+              M13.75 31.7 L14.5 31.7 L20.05 37.6 L19.4 37.6 Z
+              M50.5 31.7 L51.25 31.7 L55.65 37.6 L54.9 37.6 Z
+              M50.2 31.7 L50.95 31.7 L44.65 37.6 L43.9 37.6 Z
+              M20.3 37.6 A6.1 6.1 0 0 1 8.1 37.6 Z
+              M55.9 37.6 A6.1 6.1 0 0 1 43.7 37.6 Z
+              M30.6 31.6 H33.4 V56.9 H30.6 Z"
+          />
+        </mask>
+      </defs>
+      <path d="M32 6.5 L57.4 25.4 V56.5 H6.6 V25.4 Z" mask="url(#wh-mark-inline)" />
+      <path d="M12.6 33.9 H15.8 L16.8 37.9 H11.6 Z
+        M15.2 32.7 A1 1 0 1 0 13.2 32.7 A1 1 0 1 0 15.2 32.7 Z
+        M48.2 33.9 H51.4 L52.4 37.9 H47.2 Z
+        M50.8 32.7 A1 1 0 1 0 48.8 32.7 A1 1 0 1 0 50.8 32.7 Z" />
     </svg>
   )
 }

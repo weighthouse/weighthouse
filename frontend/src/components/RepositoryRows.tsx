@@ -14,7 +14,7 @@ import type { HubModel, LocalModel } from '../types'
 import { familyOf } from '../libraryQuery'
 import { formatBytes, formatNumber, formatParameterCount, relativeTime, taskLabel } from '../utils'
 
-// ---------- Column customization (D15) ----------
+// ---------- Column customization ----------
 
 // The rows surface is a table with a user-selectable column set,
 // persisted per account per surface. "name" is always visible; the

@@ -1,7 +1,6 @@
-// Library query state (D16): the pure half of the chassis. Every choice
-// a user can make on the library surface is a value in here, serialized
-// to explicit API params — no hidden filter logic anywhere else. The
-// facet rail itself is computed by the backend from the actual library;
+// Library query state: every user choice on the library surface is a
+// value here, serialized to explicit API params — no hidden filter
+// logic anywhere else. The facet rail is computed by the backend;
 // favorited and watching are the only built-in filter concepts.
 
 import type { HubModel } from './types'

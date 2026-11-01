@@ -46,10 +46,6 @@ STATUS_MISSING = "missing"
 STATUS_REMOVED = "removed"
 STATUS_UNCHANGED = "unchanged"
 
-#: Statuses an apply request may target: changed files re-fetch, added
-#: files fetch once, and downstream-missing files re-fetch to repair the
-#: copy. Removals are never applyable — deleting library content is a
-#: separate, explicit flow (charter: no silent deletes).
 APPLYABLE_STATUSES = (STATUS_CHANGED, STATUS_ADDED, STATUS_MISSING)
 
 #: Status display order for the artifact's file list.

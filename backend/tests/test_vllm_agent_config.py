@@ -1,9 +1,4 @@
-"""The vLLM agent refuses to serve an unauthenticated model (audit D8).
-
-The runtime feature is dormant until targets are configured, which is
-exactly why its launch policy can be strict: an operator who enables it
-reads the refusal message and configures auth deliberately.
-"""
+"""The vLLM agent refuses to serve an unauthenticated model."""
 
 from __future__ import annotations
 

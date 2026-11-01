@@ -1,7 +1,7 @@
 services:
-  modelharbor:
+  weighthouse:
     environment:
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-modelharbor}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-modelharbor}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-weighthouse}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-weighthouse}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -10,13 +10,13 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: "${POSTGRES_DB:-modelharbor}"
-      POSTGRES_USER: "${POSTGRES_USER:-modelharbor}"
+      POSTGRES_DB: "${POSTGRES_DB:-weighthouse}"
+      POSTGRES_USER: "${POSTGRES_USER:-weighthouse}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-modelharbor} -d ${POSTGRES_DB:-modelharbor}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-weighthouse} -d ${POSTGRES_DB:-weighthouse}"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -25,3 +25,4 @@ services:
 
 volumes:
   postgres-data:
+    name: weighthouse-postgres-data

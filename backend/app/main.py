@@ -31,6 +31,7 @@ from .agentkeys import (
 )
 from .auth import AuthService, utc_iso
 from .config import settings, validate_repo_id
+from .library_db import library_database_state
 from .database import INTEGRITY_ERRORS, Database
 from .downloads import DownloadManager
 from .deletion import (
@@ -68,9 +69,6 @@ auth = AuthService(settings, database)
 uploads = UploadManager(settings, database, indexer, model_storage)
 runtimes = RuntimeManager(settings, database)
 
-# Watch poller (D13): the quiet loop that gives a watch its meaning —
-# staggered light revision checks; an unreachable upstream burns its
-# slot without touching any recorded observation.
 def fetch_watch_sha(repo_id: str) -> str | None:
     return hub.model_summary(repo_id).get("sha")
 
@@ -244,7 +242,7 @@ class DownloadRequest(BaseModel):
     exclude_unsafe: bool = False
     include_patterns: list[str] = Field(default_factory=list, max_length=50)
     exclude_patterns: list[str] = Field(default_factory=list, max_length=50)
-    watch: bool = True  # D13: downloading subscribes; opt-out keeps an existing watch
+    watch: bool = True  # downloading subscribes; opting out keeps an existing watch
 
     @field_validator("repo_id")
     @classmethod
@@ -473,11 +471,22 @@ def health(request: Request) -> dict:
     # the operator, not to anyone who can reach the sign-in screen.
     if signed_in:
         storage["path"] = str(settings.model_storage)
+    library_db_state = library_database_state(
+        database.backend, settings.data_dir, database.path
+    )
     return {
         "status": "ok" if object_storage["connected"] else "degraded",
         "app": settings.app_name,
         "version": settings.app_version,
         "database_backend": database.backend,
+        "library_db": {
+            "active_file": library_db_state.active_file,
+            "legacy_file": library_db_state.legacy_name,
+            "legacy_mtime": library_db_state.legacy_mtime,
+            "legacy_bytes": library_db_state.legacy_bytes,
+        }
+        if signed_in and library_db_state.legacy_name
+        else None,
         "storage": storage,
         "object_storage": object_storage,
         "hf_token_configured": bool(settings.hf_token),
@@ -1065,12 +1074,7 @@ def list_watches(user: CurrentUser) -> dict:
 
 @app.post("/api/watches/check")
 def check_watches_now(user: WriteUser) -> dict:
-    """Immediate upstream checks for the caller's watches.
-
-    Deliberately bypasses the poller's cadence so the button means
-    "check now"; a one-second spacing between lookups keeps upstream
-    load gentle for a user-initiated pass.
-    """
+    """Immediate upstream checks for the caller's watches."""
     import time
 
     rows = database.list_watched_models(user["id"])
@@ -1176,10 +1180,10 @@ async def evict_local_model_cache(repo_id: str, user: AgentMutable) -> dict:
     updated = database.set_local_model_cached(model["repo_id"], False)
     return {"status": "evicted", "model": updated}
 
-# Model notes (D14): author-private per-model threads. Mutations belong to
-# the author; the admin's ruled power is seeing everything, not editing
-# other people's entries. Agents act with their owner's identity, so key
-# callers reach their own notes exactly like session users do.
+# Model notes: per-model threads, private to the author by default.
+# Mutations belong to author. Admin sees every thread but cannot edit
+# another's entries. Agents act as their owner and have access to their
+# owner's notes.
 
 class NoteCreateRequest(BaseModel):
     body: str = Field(min_length=1, max_length=8000)
@@ -1463,11 +1467,9 @@ async def apply_local_model_updates(
 
 @app.get("/api/local-models/{repo_id:path}/card")
 async def local_model_card(repo_id: str, user: AgentReadable) -> dict:
-    """The card for THE CARD'S copy: pinned to the sha on disk (D17).
-
-    A copy that has not moved never refetches; a copy that lands on a new
-    revision snapshots that revision once and owns it thereafter. An
-    unreachable upstream yields no card — better absent than stale.
+    """The card is pinned to this copy's on-disk sha: nothing refetches
+    while the copy hasn't moved, and an unreachable upstream yields no
+    card — absent beats stale.
     """
     model = visible_model(repo_id, user["id"])
     validated = model["repo_id"]
@@ -1599,9 +1601,7 @@ def load_runtime_model(
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
-# Per-user preferences (D15): a database row keyed by user, written only
-# through the interface's own contract. Nothing here can alter deployment
-# configuration — environment variables own that side of the line.
+# Per-user preferences: the preferences model lives in database.py.
 
 class PreferencesUpdateRequest(BaseModel):
     preferences: dict[str, Any]

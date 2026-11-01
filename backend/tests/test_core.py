@@ -12,6 +12,7 @@ from app.brand import BRAND
 from app.auth import AuthService, verify_password
 from app.config import Settings, repository_path, validate_repo_id
 from app.database import Database, _postgres_query
+from app.library_files import LEGACY_DB_FILENAME
 from app.downloads import DownloadManager
 from app.hub_service import HubService, parse_gguf_range, validate_gguf_filename
 from app.indexer import LocalModelIndexer
@@ -511,7 +512,7 @@ def test_accounts_disabled_keeps_single_user_compatibility(tmp_path: Path):
     assert service.verify_csrf(session, None) is True
 
 def test_database_migrates_existing_download_history(tmp_path: Path):
-    database_path = tmp_path / "data" / BRAND.sqlite_filename
+    database_path = tmp_path / "data" / LEGACY_DB_FILENAME
     database_path.parent.mkdir(parents=True)
     with sqlite3.connect(database_path) as connection:
         connection.execute(
@@ -558,7 +559,7 @@ def test_database_migrates_existing_download_history(tmp_path: Path):
     assert legacy["user_id"] is None
 
 def test_database_migrates_local_models_for_s3_cache_state(tmp_path: Path):
-    database_path = tmp_path / "data" / BRAND.sqlite_filename
+    database_path = tmp_path / "data" / LEGACY_DB_FILENAME
     database_path.parent.mkdir(parents=True)
     with sqlite3.connect(database_path) as connection:
         connection.execute(

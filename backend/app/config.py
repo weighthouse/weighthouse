@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .brand import BRAND
+from .library_db import migrate_library_db
+from .library_files import LIBRARY_DB_FILENAME
 
 REPO_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -25,7 +27,7 @@ def _boolean(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("APP_NAME", BRAND.display_name)
-    app_version: str = os.getenv("APP_VERSION", "1.3.0")
+    app_version: str = os.getenv("APP_VERSION", "2.0.0")
     model_storage: Path = Path(os.getenv("MODEL_STORAGE", "/models")).expanduser().resolve()
     model_storage_backend: str = os.getenv("MODEL_STORAGE_BACKEND", "filesystem").strip().lower()
     data_dir: Path = Path(os.getenv("DATA_DIR", "/data")).expanduser().resolve()
@@ -46,9 +48,6 @@ class Settings:
     # transport for those who have the RAM; see docs/downloads.md.
     enable_xet: bool = _boolean("ENABLE_XET", False)
     accounts_enabled: bool = _boolean("ACCOUNTS_ENABLED", True)
-    # Enterprise-first posture (locked 2026-09-26): cookies are marked
-    # Secure by default; running plain HTTP without TLS in front needs
-    # an explicit acknowledgment, as does disabling accounts entirely.
     secure_cookies: bool = _boolean("SECURE_COOKIES", True)
     allow_insecure_cookies: bool = _boolean("ALLOW_INSECURE_COOKIES", False)
     allow_accountless: bool = _boolean("ALLOW_ACCOUNTLESS", False)
@@ -63,10 +62,9 @@ class Settings:
         "img-src 'self' https: data:; font-src 'self' data:; connect-src 'self'; "
         "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     ).strip()
-    # Belt-and-braces CSRF companion: refuse state-changing requests that
-    # carry our session cookie while naming a foreign Origin. SameSite
-    # and the double-submit token carry the real protection; this only
-    # closes the door behind a future, weaker client.
+    # Companion to SameSite and the double-submit token: refuse
+    # state-changing requests that carry our session cookie with a
+    # foreign Origin.
     origin_check: bool = _boolean("ORIGIN_CHECK", True)
 
     def __post_init__(self) -> None:
@@ -99,11 +97,13 @@ class Settings:
 
     @property
     def database_path(self) -> Path:
-        return self.data_dir / BRAND.sqlite_filename
+        return self.data_dir / LIBRARY_DB_FILENAME
 
     @property
     def database_target(self) -> Path | str:
-        return self.database_url or self.database_path
+        if self.database_url:
+            return self.database_url
+        return migrate_library_db(self.data_dir)
 
     @property
     def hub_cache_path(self) -> Path:

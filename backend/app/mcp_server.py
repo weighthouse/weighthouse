@@ -4,9 +4,8 @@ Agents that speak MCP connect here the way a browser connects to the
 web app: the same library, the same visibility rules, the same scope
 ladder. The transport is the streamable-HTTP shape of the protocol in
 its ``2025-06-18`` form — one JSON-RPC message per POST, answered with
-a single JSON response — kept deliberately stateless: no sessions, no
-SSE streams, no server-to-client requests for a library that acts only
-when asked.
+a single JSON response — stateless: no sessions, no SSE streams, no
+server-to-client requests for a library that acts only when asked.
 
 Every tool call is the owner acting through a key: tools resolve
 against the acting user's visible models exactly like the HTTP

@@ -2,14 +2,12 @@
 
 Every stored repository carries one manifest describing it: status, origin,
 integrity fields, and (detailed in the download-planning work that follows)
-the provenance audit trail. The manifest is the durable library contract, so
-it is written under a brand-neutral filename that must not change when the
-product is renamed or white-labeled.
+the provenance audit trail.
 
-The upstream HuggingHack manifest filename is accepted for reading only
-(decision D9): libraries and S3 buckets produced by the upstream project keep
-working, but every new write uses the current name and removes a legacy
-sibling so a directory holds exactly one manifest.
+The upstream HuggingHack manifest filename is accepted for reading only:
+libraries and S3 buckets produced by the upstream project keep working, but
+every new write uses the current name and removes a legacy sibling so a
+directory holds exactly one manifest.
 
 Writes are staged into a temporary file and atomically renamed, so readers
 never observe a half-written manifest.
@@ -23,10 +21,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .brand import BRAND
+from .library_files import LEGACY_MANIFEST_FILENAME, MANIFEST_FILENAME
 
-MANIFEST_FILENAME = BRAND.manifest_filename
-LEGACY_MANIFEST_FILENAME = BRAND.legacy_manifest_filename
 MANIFEST_FILENAMES = (MANIFEST_FILENAME, LEGACY_MANIFEST_FILENAME)
 
 

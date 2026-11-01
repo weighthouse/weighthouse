@@ -1,25 +1,15 @@
-"""Download planning: selection semantics and frozen download plans.
+"""Download planning.
 
-Two pieces live here:
+``resolve_selection`` is the single implementation of the selection
+semantics (the frontend sends mode plus parameters and receives the
+derived patterns). ``plan_download`` freezes the exact file list,
+sizes, and selected-vs-transfer split against a resolved commit SHA at
+queue time; the worker executes the pinned plan and never re-resolves.
+Upstream may move the branch between queue time and worker start — the
+plan does not.
 
-``resolve_selection`` is the single source of truth for download modes.
-It is the backend port of the selection logic that previously lived in
-the frontend: the frontend now sends mode plus its parameters,
-and this module derives the concrete include/exclude patterns. The
-frontend's copy was removed deliberately — two implementations of the
-same semantics drift apart.
-
-``plan_download`` builds a *frozen* plan at queue time. It resolves the
-requested revision to a commit SHA, performs a ``snapshot_download``
-dry run against that SHA, and records the exact file list, sizes, and
-the selected-vs-transfer split without downloading anything. The plan is
-stored in the job payload; the worker executes the pinned SHA and the
-pinned patterns and never re-resolves anything. Between queue time and
-worker start, upstream may move the branch — the plan does not.
-
-Plans are plain JSON-serializable dicts with ``schema_version`` and are
-part of the persistence contract (attested by versioned fixtures in the
-test suite).
+Plans are JSON-serializable dicts with ``schema_version`` and are
+covered by versioned fixtures in the test suite.
 """
 
 from __future__ import annotations

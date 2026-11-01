@@ -1,26 +1,15 @@
 """Watching a repository for upstream movement.
 
-Locked design (charter D13): three independent facts — Saved, Watch,
-Copy — with one deliberate coupling, **downloading turns Watch on**.
-A watch is a subscription at repository level; notifying is simply
-what a watch does. There is no separate notify flag, no threshold,
-no name-pattern rule engine, and no frozen state — a downloaded copy
-that is not watched is a *quiet copy*, which is a legitimate
-long-term residence.
+Three independent facts — Saved, Watch, Copy — with one coupling:
+downloading turns Watch on. A watch is a subscription at repository
+level; notifying is what a watch does — no separate notify flag, no
+threshold, no rule engine, no frozen state. Watches are per-user; each
+row remembers the upstream revision last acknowledged by the watcher
+(baseline at subscribe time for copy-less watches) and the upstream
+revision the poller last observed, with when drift was first detected.
 
-Watches are per-user, mirroring the saved-models pattern: the
-owner's watches are the owner's. Each row remembers:
-
-- the upstream revision last acknowledged by the watcher
-  (``last_seen_sha``) — taken at watch time for copy-less watches, so
-  a change *after* subscribing is the notification;
-- the upstream revision the poller last observed (``upstream_sha``)
-  and when drift was first detected (``changed_at``), self-healing
-  back to clean when baseline and upstream agree again.
-
-Every request that would silently miss a change is refused instead:
-subscribing to something with no copy and no readable upstream
-fails loudly at watch time rather than discoverably a month later.
+Subscribing to something with no copy and no readable upstream fails
+at watch time rather than being discovered later.
 """
 
 from __future__ import annotations

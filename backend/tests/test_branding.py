@@ -1,19 +1,9 @@
-"""Rename-robustness guardrails.
+"""Guardrails for the brand modules.
 
-These tests keep the product renameable:
-
-1. The brand slug must appear only in the brand modules
-   (``backend/app/brand.py`` and ``frontend/src/brand.ts``) and in
-   packaging fixtures that name the product on purpose (README,
-   LICENSE, docker-compose defaults, launchers). Source code must
-   derive identity from ``BRAND`` so a rebrand touches two files.
-2. The durable manifest filename must stay brand-neutral: no slug,
-   and never the upstream name.
-3. Both brand modules must agree, so a rebrand cannot make the
-   frontend and the backend drift apart.
-
-Exclusions are explicit. ``frontend/index.html`` carries the display
-name because the Vite shell is static; a rebrand replaces its strings.
+The slug appears only in ``backend/app/brand.py`` and
+``frontend/src/brand.ts``, and the two modules agree (a consistency
+test). The manifest filename contains neither the slug nor the
+upstream name, and public asset files carry neither.
 """
 
 from __future__ import annotations
@@ -22,6 +12,11 @@ import re
 from pathlib import Path
 
 from app.brand import BRAND
+from app.library_files import (
+    LEGACY_MANIFEST_FILENAME,
+    MANIFEST_FILENAME,
+    PART_SUFFIX,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
@@ -38,11 +33,17 @@ def backend_python_sources() -> list[Path]:
 
 
 def test_backend_slug_lives_only_in_brand_module():
-    allowed = BACKEND_ROOT / "app" / "brand.py"
+    allowed = {
+        BACKEND_ROOT / "app" / "brand.py",
+        # Carries the partial-file suffix, whose name follows the product.
+        BACKEND_ROOT / "app" / "library_files.py",
+        # This guard names the slug to assert on it.
+        Path(__file__).resolve(),
+    }
     offenders = [
         path
         for path in backend_python_sources()
-        if path != allowed
+        if path not in allowed
         and re.search(re.escape(BRAND.slug), path.read_text(encoding="utf-8"), re.IGNORECASE)
     ]
     assert offenders == [], f"slug leaked outside brand.py: {offenders}"
@@ -71,12 +72,12 @@ def test_public_assets_do_not_carry_the_slug():
 
 
 def test_manifest_filename_is_brand_neutral():
-    for name in (BRAND.manifest_filename, BRAND.legacy_manifest_filename):
+    for name in (MANIFEST_FILENAME, LEGACY_MANIFEST_FILENAME):
         assert name.startswith(".")
         assert name.endswith(".json")
         assert BRAND.slug not in name
-    assert BRAND.manifest_filename == ".modelmanifest.json"
-    assert BRAND.legacy_manifest_filename == ".hugginghack.json"
+    assert MANIFEST_FILENAME == ".modelmanifest.json"
+    assert LEGACY_MANIFEST_FILENAME == ".hugginghack.json"
 
 
 def _brand_ts():
@@ -99,8 +100,6 @@ def test_backend_and_frontend_brand_modules_agree():
     expected = {
         "displayName": BRAND.display_name,
         "description": BRAND.description,
-        "manifestFilename": BRAND.manifest_filename,
-        "legacyManifestFilename": BRAND.legacy_manifest_filename,
         "markPath": "/brand-mark.svg",
     }
     for key, value in expected.items():
@@ -111,6 +110,20 @@ def test_backend_and_frontend_brand_modules_agree():
 
 def test_backend_brand_derivations_compose_from_the_slug():
     assert BRAND.session_cookie == f"{BRAND.slug}-session"
-    assert BRAND.sqlite_filename == f"{BRAND.slug}.sqlite3"
     assert BRAND.hf_library_name == BRAND.slug
-    assert BRAND.part_suffix == f".{BRAND.slug}-part"
+    assert PART_SUFFIX == ".weighthouse-part"
+
+
+def test_library_files_do_not_carry_the_slug():
+    import app.library_files as library_files
+
+    # The canonical names are brand-neutral, by design.
+    assert BRAND.slug not in library_files.LIBRARY_DB_FILENAME
+    assert BRAND.slug not in library_files.MANIFEST_FILENAME
+    assert BRAND.slug not in library_files.LEGACY_MANIFEST_FILENAME
+    assert library_files.LEGACY_DB_FILENAME == "modelharbor.sqlite3"
+    # Only the partial-file suffix carries the product slug; everything
+    # the slug would have pointed at before this version is legacy.
+    assert library_files.PART_SUFFIX == f".{BRAND.slug}-part"
+    for name in library_files.LEGACY_PART_SUFFIXES:
+        assert BRAND.slug not in name

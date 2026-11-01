@@ -1,12 +1,12 @@
-name: modelharbor
+name: weighthouse
 
 services:
-  modelharbor:
-    image: ghcr.io/toks-love/modelharbor:v1.3.0
+  weighthouse:
+    image: ghcr.io/weighthouse/weighthouse:v2.0.0
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: modelharbor
+    container_name: weighthouse
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     ports:

@@ -1,6 +1,6 @@
 # Agents
 
-ModelHarbor exposes an MCP endpoint and a set of API keys so that local agents can search the Hub, watch the library, and manage model files.
+Weighthouse exposes an MCP endpoint and a set of API keys so that local agents can search the Hub, watch the library, and manage model files.
 
 Both live in **Settings → Agent API keys**. Only administrators can create keys.
 
@@ -24,7 +24,7 @@ Keys are minted by administrators and carry the creating account's identity, so 
 The endpoint is `POST /api/mcp` — Streamable HTTP, one JSON-RPC 2.0 message per request, authenticated as the key:
 
 ```bash
-curl -X POST http://modelharbor-host:7860/api/mcp \
+curl -X POST http://weighthouse-host:7860/api/mcp \
   -H "Authorization: Bearer ak_your_token" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -34,6 +34,6 @@ Tools available to a key follow its scopes: `search_models`, `model_details`, `l
 
 Deleting a copy through MCP follows the same rule as the HTTP API: pass `confirmation` equal to the exact `repo_id`.
 
-Most MCP clients take an endpoint URL plus a header. Point the client at `http://modelharbor-host:7860/api/mcp` with the `Authorization: Bearer …` header and an appropriate instructive prompt, and it can discover and use the tools itself through `tools/list` and `tools/call`.
+Most MCP clients take an endpoint URL plus a header. Point the client at `http://weighthouse-host:7860/api/mcp` with the `Authorization: Bearer …` header and an appropriate instructive prompt, and it can discover and use the tools itself through `tools/list` and `tools/call`.
 
 Requests through a key are recorded in the key's history: method, path, and status.

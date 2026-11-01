@@ -23,10 +23,9 @@ interface FacetGroupProps {
   onPick: (key: ValueFacet, value: string) => void
 }
 
-// The facet rail (D16): computed by the backend from the actual library
-// — favorited and watching are the only built-ins; every other group is
-// a value that exists on disk right now, with its live count. Counts
-// follow the search text, never the filters themselves.
+// Facet groups come from the backend: counts over the visible library,
+// never hardcoded buckets; favorited and watching are the only
+// built-ins. Counts follow the search text, never the filters.
 function FacetGroup({ label, buckets, selected, facetKey, onPick }: FacetGroupProps) {
   if (buckets.length === 0) return null
   return (

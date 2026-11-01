@@ -20,7 +20,7 @@ Custom pattern examples:
 
 ## Gated and private models
 
-ModelHarbor checks for access to the model before starting a download.
+Weighthouse checks for access to the model before starting a download.
 
 1. Accept the repository's license or access terms on huggingface.co while signed in.
 2. [Create a read-only user access token.](https://huggingface.co/settings/tokens)

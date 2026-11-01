@@ -1,9 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">Product mark</title>
-  <desc id="desc">A flat sailboat mark</desc>
+  <desc id="desc">A flat mark of a house front holding a beam balance, weights resting in its pans</desc>
+  <defs>
+    <mask id="wh-mark-cut">
+      <rect width="64" height="64" fill="#000"/>
+      <path fill="#fff" d="M32 6.5 L57.4 25.4 V56.5 H6.6 V25.4 Z"/>
+      <path fill="#000" d="M10.8 28.7 H53.2 V31.7 H10.8 Z
+        M13.5 31.7 L14.25 31.7 L9.0 37.6 L8.35 37.6 Z
+        M13.75 31.7 L14.5 31.7 L20.05 37.6 L19.4 37.6 Z
+        M50.5 31.7 L51.25 31.7 L55.65 37.6 L54.9 37.6 Z
+        M50.2 31.7 L50.95 31.7 L44.65 37.6 L43.9 37.6 Z
+        M20.3 37.6 A6.1 6.1 0 0 1 8.1 37.6 Z
+        M55.9 37.6 A6.1 6.1 0 0 1 43.7 37.6 Z
+        M30.6 31.6 H33.4 V56.9 H30.6 Z"/>
+    </mask>
+  </defs>
   <g fill="#21645b">
-    <path d="M 17 36 L 49 36 A 16 16 0 0 1 17 36 Z"/>
-    <path d="M 34 8 L 52 29 L 34 29 Z"/>
-    <rect x="32.5" y="8" width="3" height="21" rx="1.5"/>
+    <path d="M32 6.5 L57.4 25.4 V56.5 H6.6 V25.4 Z" mask="url(#wh-mark-cut)"/>
+    <path d="M12.6 33.9 H15.8 L16.8 37.9 H11.6 Z
+      M15.2 32.7 A1 1 0 1 0 13.2 32.7 A1 1 0 1 0 15.2 32.7 Z
+      M48.2 33.9 H51.4 L52.4 37.9 H47.2 Z
+      M50.8 32.7 A1 1 0 1 0 48.8 32.7 A1 1 0 1 0 50.8 32.7 Z"/>
   </g>
 </svg>

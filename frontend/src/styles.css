@@ -4,9 +4,8 @@
 
 :root {
   color-scheme: light;
-  /* House style tokens, carried over from the toks.love site/blog so the
-     family reads as one maker. This product's own mark stays separate; the
-     heart red is attribution-only. */
+  /* House style tokens from the toks.love site family; this product's
+     own mark stays separate. */
   --brand-primary: #21645b; /* house accent: deep sea pine */
   --brand-warm: #2e7166;    /* second accent step, same family, slightly lighter */
   --on-brand: #faf9f6;      /* house paper: text/icons sitting on brand color */
@@ -920,8 +919,7 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
     linear-gradient(135deg, color-mix(in oklch, var(--brand-primary) 12%, var(--canvas)), var(--canvas) 58%);
 }
 .auth-card-mark { width: 46px; height: 46px; margin-bottom: 10px; color: var(--brand-primary); }
-/* toks.love attribution — the heart is toks.love's mark and appears only in
-   these "made by" credits (auth story, settings about-line), per brand ruling. */
+/* toks.love attribution — the heart appears only in these "made by" credits. */
 .made-by-toks { display: inline-flex; align-items: center; gap: 1px; }
 .toks-heart { width: 0.95em; height: 0.95em; margin-left: 2px; color: var(--heart); }
 .auth-card {

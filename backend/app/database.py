@@ -30,10 +30,6 @@ def _postgres_query(query: str, parameters: object = ()) -> str:
         return NAMED_PARAMETER_PATTERN.sub(r"%(\1)s", query)
     return query.replace("?", "%s")
 
-# User preferences (D15): the whole writable contract. Every key here is
-# a per-account setting the interface may change; nothing on this list
-# touches deployment configuration, which stays environment-owned. No
-# presets are seeded — an account starts with an empty object.
 USER_PREFERENCE_DENSITY = ("cards", "rows")
 USER_PREFERENCE_LIMITS = {
     "density": 8,
@@ -775,7 +771,7 @@ class Database:
         return [dict(row) for row in rows]
 
     # ------------------------------------------------------------------
-    # Model notes (D14): per-model threads, author-private by default.
+    # Model notes: per-model threads, author-private by default.
     # ------------------------------------------------------------------
 
     def create_model_note(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -840,7 +836,7 @@ class Database:
     def set_model_note_pinned(
         self, note_id: str, pinned: bool, updated_at: str
     ) -> dict[str, Any] | None:
-        """Pin is exclusive per author within a thread (D14): pinning one
+        """Pin is exclusive per author within a thread: pinning one
         entry releases that author's previous pin and nobody else's. Each
         viewer's cell then shows pinned-else-latest among notes visible
         to them."""
@@ -875,7 +871,7 @@ class Database:
     def set_model_note_shared(
         self, note_id: str, shared: bool, updated_at: str
     ) -> dict[str, Any] | None:
-        """Share is a thread-level act (D14): flips every entry in the
+        """Share is a thread-level act: flips every entry in the
         thread authored by the same author, never other people's entries."""
         with self._write_lock, self.connect() as connection:
             row = connection.execute(
@@ -905,8 +901,8 @@ class Database:
     def note_search_hits(
         self, viewer_id: str, query: str, is_admin: bool = False, limit: int = 50
     ) -> list[dict[str, Any]]:
-        """repo_ids + matched note snippets visible to the viewer (D14:
-        search hits note bodies; privacy respected per entry)."""
+        """repo_ids + matched note snippets visible to the viewer (search
+        hits note bodies; privacy respected per entry)."""
         with self.connect() as connection:
             rows = connection.execute(
                 """
@@ -924,7 +920,7 @@ class Database:
         return [self._decode_row(row) for row in rows]
 
     def note_previews(self, viewer_id: str, is_admin: bool = False) -> dict[str, dict[str, Any]]:
-        """Cell preview per copy (D14): the pinned-else-latest entry among
+        """Cell preview per copy: the pinned-else-latest entry among
         notes visible to this viewer, keyed by repo_id. Absent key = no
         visible notes for that copy."""
         with self.connect() as connection:
@@ -947,12 +943,6 @@ class Database:
                 (viewer_id, is_admin),
             ).fetchall()
         return {row["repo_id"]: self._decode_row(row) for row in rows}
-
-    # ------------------------------------------------------------------
-    # User preferences (D15): per-account settings live in the database,
-    # never in deployment config. One row per user; the allowlist below
-    # is the whole contract — new keys are added here deliberately.
-    # ------------------------------------------------------------------
 
     def get_user_preferences(self, user_id: str) -> dict[str, Any]:
         with self.connect() as connection:
@@ -989,7 +979,7 @@ class Database:
             )
         return validated
 
-    # Model card snapshots (D17): the stored card is pinned to the copy's
+    # Model card snapshots: the stored card is pinned to the copy's
     # on-disk sha and never drifts ahead of the weights. Keyed by
     # (repo_id, sha); refetching happens only in the caller that notices a
     # sha without a snapshot. A rolling trio of recent revisions is kept.
@@ -1233,8 +1223,8 @@ class Database:
         return self._decode_row(row)
 
     def unfinished_downloads(self) -> list[dict[str, Any]]:
-        # Paused jobs are deliberately excluded: a pause survives a server
-        # restart instead of silently re-starting the transfer.
+        # Paused jobs are excluded: a pause survives a server restart
+        # instead of silently re-starting the transfer.
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM downloads WHERE status IN ('queued', 'preparing', 'downloading')"
@@ -1535,7 +1525,7 @@ class Database:
             ).fetchone()
         return self._decode_row(row)
 
-    # Library query system (D16): the facet rail is computed from the
+    # Library query system: the facet rail is computed from the
     # actual library — counts over what this viewer can see, never
     # hardcoded buckets. Favorited and watching are the only built-in
     # filter concepts; every other rail entry is a value that exists on

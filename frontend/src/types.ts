@@ -164,6 +164,8 @@ export interface HubModelDetails extends HubModel {
 export type DownloadMode = 'full' | 'safetensors' | 'gguf' | 'metadata' | 'custom'
 
 export interface DownloadJob {
+  priority?: number
+  queued_at?: string | null
   id: string
   repo_id: string
   revision: string

@@ -34,6 +34,7 @@ import {
 } from './RepositoryRows'
 import { useNavigate } from 'react-router-dom'
 import { useScrollMemory } from '../useScrollMemory'
+import { WATCH_SORTS, sortWatchRows, watchLocation as copyLocation, type WatchSort } from '../watchQuery'
 
 type ToastHandler = (message: string, tone?: 'success' | 'error') => void
 type GroupId = 'attention' | 'current' | 'unchecked'
@@ -50,12 +51,6 @@ function groupOf(row: WatchRecord): GroupId {
   return 'unchecked'
 }
 
-function copyLocation(copy: NonNullable<WatchRecord['copy']>): string {
-  if (copy.storage_backend === 's3') return copy.cached ? 'S3 cached' : 'S3 only'
-  if (copy.location && copy.location !== 'primary') return copy.location
-  return 'local'
-}
-
 export function WatchedPage({ onToast }: { onToast: ToastHandler }) {
   const [items, setItems] = useState<WatchRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,6 +58,8 @@ export function WatchedPage({ onToast }: { onToast: ToastHandler }) {
   const [checking, setChecking] = useState(false)
   const [preferences, setPreferences] = useState<UserPreferences | null>(null)
   const [stateFirst, setStateFirst] = useState<GroupId>('attention')
+  const [sort, setSort] = useState<WatchSort>('state')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [diff, setDiff] = useState<UpdateDiff | null>(null)
   const [reviewPhase, setReviewPhase] = useState<'loading' | 'ready'>('loading')
@@ -201,15 +198,22 @@ export function WatchedPage({ onToast }: { onToast: ToastHandler }) {
   const grouped = useMemo(() => {
     const buckets: Record<GroupId, WatchRecord[]> = { attention: [], current: [], unchecked: [] }
     for (const item of items) buckets[groupOf(item)].push(item)
-    buckets.attention.sort((a, b) => (b.change_detected_at || '').localeCompare(a.change_detected_at || ''))
-    buckets.current.sort((a, b) => (b.checked_at || '').localeCompare(a.checked_at || ''))
-    buckets.unchecked.sort((a, b) => a.repo_id.localeCompare(b.repo_id))
     const order: GroupId[] =
       stateFirst === 'attention'
         ? ['attention', 'current', 'unchecked']
         : ['current', 'attention', 'unchecked']
-    return order.map((id) => ({ id, rows: buckets[id] }))
-  }, [items, stateFirst])
+    return order.map((id) => ({ id, rows: sortWatchRows(buckets[id], sort, sortOrder) }))
+  }, [items, stateFirst, sort, sortOrder])
+
+  function chooseSort(key: string) {
+    if (!(WATCH_SORTS as readonly string[]).includes(key)) return
+    const next = key as WatchSort
+    const order = sort === next ? (sortOrder === 'asc' ? 'desc' : 'asc')
+      : ['size', 'params', 'checked', 'state'].includes(next) ? 'desc' : 'asc'
+    setSort(next)
+    setSortOrder(order)
+    if (next === 'state') setStateFirst(order === 'desc' ? 'attention' : 'current')
+  }
 
   const staleCount = items.filter((item) => item.update_available).length
 
@@ -315,7 +319,7 @@ export function WatchedPage({ onToast }: { onToast: ToastHandler }) {
             {name}
           </span>
           {WATCHED_COLUMNS.filter((column) => visible.includes(column.id)).map((column) => (
-            <span key={column.id} className={`c-${column.id}${column.align ? ` c-${column.align}` : ''}`}>
+            <span key={column.id} className={`c-${column.id}${column.align === 'right' ? ' right' : ''}`}>
               {cells[column.id]}
             </span>
           ))}
@@ -437,13 +441,13 @@ export function WatchedPage({ onToast }: { onToast: ToastHandler }) {
                 <span className="rule" aria-hidden="true" />
                 <span className="n">{group.rows.length}</span>
               </div>
-              <div className="rows-view" style={{ '--rows-grid': rowsGridTemplate(WATCHED_COLUMNS, visible) + ' auto' } as CSSProperties}>
+              <div className="rows-view" style={{ '--rows-grid': rowsGridTemplate(WATCHED_COLUMNS, visible) + ' 190px' } as CSSProperties}>
                 <RowsHead
                   spec={WATCHED_COLUMNS}
                   visible={visible}
-                  sortColumn="state"
-                  order={stateFirst === 'attention' ? 'desc' : 'asc'}
-                  onSort={() => setStateFirst((current) => (current === 'attention' ? 'current' : 'attention'))}
+                  sortColumn={sort}
+                  order={sortOrder}
+                  onSort={chooseSort}
                 />
                 {group.rows.map((row) => renderRow(row, group.id))}
               </div>

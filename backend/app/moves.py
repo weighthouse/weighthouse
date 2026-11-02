@@ -120,16 +120,17 @@ def apply_move(
                 prefix=f".{destination_path.name}.moving-",
             )
         )
+        staged_copy = staging / plan["relative_path"]
         try:
-            shutil.copytree(from_path, staging / plan["relative_path"])
-            moved_size, moved_count, _ = directory_stats(staging / plan["relative_path"])
+            shutil.copytree(from_path, staged_copy)
+            moved_size, moved_count, _ = directory_stats(staged_copy)
             if moved_size != int(plan["size_bytes"]) or moved_count != int(plan["file_count"]):
                 raise MoveError(
                     "Verification failed while copying: the staged content does not "
                     "match the plan, so nothing was changed."
                 )
             destination_path.parent.mkdir(parents=True, exist_ok=True)
-            staging.rename(destination_path.parent / destination_path.name)
+            staged_copy.rename(destination_path)
             _finalize(plan, destination_path, destination.name, indexer)
         finally:
             if staging.exists():

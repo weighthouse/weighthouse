@@ -36,7 +36,7 @@ export const LOCAL_COLUMNS: ColumnSpec[] = [
   { id: 'params', label: 'Params', track: '84px', align: 'right', sortKey: 'parameter_count' },
   { id: 'library', label: 'Library', track: '110px', sortKey: 'library_name' },
   { id: 'location', label: 'Location', track: '110px', sortKey: 'location' },
-  { id: 'state', label: 'State', track: '130px' },
+  { id: 'state', label: 'State', track: '130px', sortKey: 'state' },
   { id: 'note', label: 'Note', track: 'minmax(0, 1.1fr)' },
   { id: 'modified', label: 'Modified', track: '92px', align: 'right', sortKey: 'modified_at' },
   { id: 'files', label: 'File count', track: '78px', align: 'right', sortKey: 'file_count' },
@@ -52,7 +52,7 @@ export const HUB_COLUMNS: ColumnSpec[] = [
   { id: 'params', label: 'Params', track: '84px', align: 'right', sortKey: 'params' },
   { id: 'quants', label: 'Quants', track: '78px', align: 'right', sortKey: 'quants' },
   { id: 'library', label: 'Library', track: '110px', sortKey: 'library' },
-  { id: 'state', label: 'State', track: '120px' },
+  { id: 'state', label: 'State', track: '120px', sortKey: 'state' },
   { id: 'downloads', label: 'Downloads', track: '92px', align: 'right', sortKey: 'downloads' },
   { id: 'likes', label: 'Likes', track: '78px', align: 'right', sortKey: 'likes' },
   { id: 'modified', label: 'Modified', track: '92px', align: 'right', sortKey: 'modified' },
@@ -61,13 +61,13 @@ export const HUB_COLUMNS_DEFAULT: string[] = ['kind', 'params', 'quants', 'libra
 export const HUB_COLUMN_IDS: string[] = HUB_COLUMNS.map((column) => column.id)
 
 export const WATCHED_COLUMNS: ColumnSpec[] = [
-  { id: 'kind', label: 'Kind', track: '110px' },
-  { id: 'size', label: 'Size', track: '84px', align: 'right' },
-  { id: 'params', label: 'Params', track: '84px', align: 'right' },
-  { id: 'location', label: 'Location', track: '110px' },
+  { id: 'kind', label: 'Kind', track: '110px', sortKey: 'kind' },
+  { id: 'size', label: 'Size', track: '84px', align: 'right', sortKey: 'size' },
+  { id: 'params', label: 'Params', track: '84px', align: 'right', sortKey: 'params' },
+  { id: 'location', label: 'Location', track: '110px', sortKey: 'location' },
   { id: 'state', label: 'State', track: '260px', sortKey: 'state' },
-  { id: 'note', label: 'Note', track: 'minmax(0, 1.1fr)' },
-  { id: 'checked', label: 'Checked', track: '92px', align: 'right' },
+  { id: 'note', label: 'Note', track: 'minmax(0, 1.1fr)', sortKey: 'note' },
+  { id: 'checked', label: 'Checked', track: '92px', align: 'right', sortKey: 'checked' },
 ]
 // This page is about drift, not acquisition: params and note start off.
 export const WATCHED_COLUMNS_DEFAULT: string[] = ['kind', 'size', 'location', 'state', 'checked']

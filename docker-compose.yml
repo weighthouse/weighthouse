@@ -2,7 +2,7 @@ name: weighthouse
 
 services:
   weighthouse:
-    image: ghcr.io/weighthouse/weighthouse:v2.0.0
+    image: ghcr.io/weighthouse/weighthouse:v2.0.1
     build:
       context: .
       dockerfile: Dockerfile

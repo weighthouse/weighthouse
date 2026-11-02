@@ -317,7 +317,7 @@ def test_queue_gated_repository_with_auth_error_maps_to_friendly_error(tmp_path)
     manager.shutdown()
 
 
-def test_queue_gated_repository_with_500_offers_it_as_a_possibility(tmp_path):
+def test_queue_gated_repository_with_500_preserves_the_diagnosis(tmp_path):
     manager, _, _ = _make_manager(
         tmp_path,
         gated=True,
@@ -333,8 +333,10 @@ def test_queue_gated_repository_with_500_offers_it_as_a_possibility(tmp_path):
         manager.queue("acme/locked", "main", "full")
 
     message = str(excinfo.value)
-    assert "The Hub returned HTTP 500" in message
-    assert "If this model is gated" in message
+    assert message.startswith("Request failed with status 500\n\n")
+    assert "HTTP 500 may be hiding an access refusal" in message
+    assert "https://huggingface.co/acme/locked" in message
+    assert "not authorized" not in message
     manager.shutdown()
 
 
@@ -356,7 +358,7 @@ def test_queue_open_repository_with_500_keeps_raw_error(tmp_path):
 
 # --- failure message mapping ---------------------------------------------
 
-def test_failure_message_confirms_gating_from_plan_metadata(tmp_path):
+def test_failure_message_requires_an_access_refusal_for_gate_guidance(tmp_path):
     manager, _, _ = _make_manager(tmp_path)
     current = {
         "repo_id": "acme/locked",
@@ -367,7 +369,7 @@ def test_failure_message_confirms_gating_from_plan_metadata(tmp_path):
     }
 
     message, metadata = manager._failure_message(
-        Exception("some refusal"), current, attempts_made=1
+        Exception("HTTP 403 Forbidden"), current, attempts_made=1
     )
 
     assert "This repository is gated" in message
@@ -375,7 +377,7 @@ def test_failure_message_confirms_gating_from_plan_metadata(tmp_path):
     assert metadata == current["metadata"]
 
 
-def test_failure_message_maps_500_to_gated_possibility(tmp_path):
+def test_failure_message_preserves_500(tmp_path):
     manager, _, _ = _make_manager(tmp_path)
     current = {
         "repo_id": "acme/plain",
@@ -386,8 +388,47 @@ def test_failure_message_maps_500_to_gated_possibility(tmp_path):
         Exception("Request failed with status 500"), current, attempts_made=1
     )
 
-    assert "The Hub returned HTTP 500" in message
-    assert "If this model is gated" in message
+    assert message == "Request failed with status 500"
+
+
+@pytest.mark.parametrize("diagnosis", [
+    "HTTP 500",
+    "Request failed with status 500",
+    "HTTP Error 500: Internal Server Error",
+    "500 Server Error: Internal Server Error for url: https://huggingface.co/acme/tiny",
+])
+@pytest.mark.parametrize("worker", [False, True])
+def test_known_gate_adds_context_to_an_unexplained_500(tmp_path, diagnosis, worker):
+    from app.downloads import DownloadWorkerExit
+
+    manager, _, _ = _make_manager(tmp_path)
+    error = DownloadWorkerExit(1, diagnosis) if worker else Exception(diagnosis)
+    message, metadata = manager._failure_message(
+        error, {"repo_id": "acme/tiny", "metadata": {"gated": True}}, 1
+    )
+    assert message.startswith(diagnosis + "\n\n")
+    assert "This repository is gated" in message
+    assert "may be hiding an access refusal" in message
+    assert "https://huggingface.co/acme/tiny" in message
+    assert "not authorized" not in message
+    if worker:
+        assert metadata["output_tail"] == diagnosis
+    manager.shutdown()
+
+
+@pytest.mark.parametrize("diagnosis", [
+    "HTTP 500: file too large for HTTP. Use hf_xet.",
+    "HTTP 515: file too large for HTTP. Use hf_xet.",
+    "HTTP 503: service temporarily unavailable",
+    "[Errno 28] No space left on device",
+])
+def test_specific_failure_on_a_gated_model_keeps_its_diagnosis(tmp_path, diagnosis):
+    manager, _, _ = _make_manager(tmp_path)
+    message, _ = manager._failure_message(
+        Exception(diagnosis), {"repo_id": "acme/tiny", "metadata": {"gated": True}}, 1
+    )
+    assert message == diagnosis
+    manager.shutdown()
 
 
 def test_failure_message_keeps_raw_message_and_output_tail(tmp_path):
@@ -402,6 +443,119 @@ def test_failure_message_keeps_raw_message_and_output_tail(tmp_path):
 
     assert message == "boom-tail"
     assert metadata["output_tail"] == "boom-tail"
+
+
+@pytest.mark.parametrize("gated", [False, True])
+@pytest.mark.parametrize("message", [
+    "HTTP 515: file too large for HTTP. Use hf_xet to download this file.",
+    "[Errno 28] No space left on device",
+])
+def test_failure_preserves_actionable_worker_errors(tmp_path, gated, message):
+    from app.downloads import DownloadWorkerExit
+
+    manager, _, _ = _make_manager(tmp_path)
+    current = {"repo_id": "acme/tiny", "metadata": {"gated": gated}}
+    actual, metadata = manager._failure_message(DownloadWorkerExit(1, message), current, 1)
+    assert actual == message
+    assert metadata["output_tail"] == message
+    manager.shutdown()
+
+
+def test_gated_plan_failure_preserves_file_size_guidance(tmp_path):
+    manager, _, _ = _make_manager(tmp_path, gated=True)
+    diagnosis = "HTTP 515: file too large for HTTP. Use hf_xet to download this file."
+    manager._dry_run = lambda *args, **kwargs: (_ for _ in ()).throw(Exception(diagnosis))
+    with pytest.raises(ValueError) as error:
+        manager.queue("acme/tiny")
+    assert str(error.value) == diagnosis
+    manager.shutdown()
+
+
+@pytest.mark.parametrize("output", [None, "downloading model.safetensors"])
+def test_gated_worker_sigkill_is_not_reported_as_access_failure(tmp_path, output):
+    from app.downloads import DownloadWorkerExit
+
+    manager, _, _ = _make_manager(tmp_path)
+    message, metadata = manager._failure_message(
+        DownloadWorkerExit(-9, output), {"repo_id": "acme/tiny", "metadata": {"gated": True}}, 1
+    )
+    assert "killed by the operating system (SIGKILL)" in message
+    assert "not authorized" not in message
+    if output:
+        assert metadata["output_tail"] == output
+    manager.shutdown()
+
+
+def test_real_worker_sigkill_preserves_signal_and_prior_output(tmp_path, monkeypatch):
+    import sys
+    import threading
+    from app.downloads import DownloadWorkerExit
+
+    manager, _, _ = _make_manager(tmp_path)
+    monkeypatch.setattr(manager, "_worker_command", lambda *args: [
+        sys.executable, "-c",
+        "import os, signal; print('worker started', flush=True); os.kill(os.getpid(), signal.SIGKILL)",
+    ])
+    monkeypatch.setattr(manager, "_worker_environment", lambda *args: {})
+    with pytest.raises(DownloadWorkerExit) as caught:
+        manager._download_snapshot("test-job", {}, tmp_path, threading.Event())
+    assert caught.value.returncode == -9
+    assert caught.value.output == "worker started"
+    message, metadata = manager._failure_message(
+        caught.value, {"repo_id": "acme/tiny", "metadata": {"gated": True}}, 1
+    )
+    assert "SIGKILL" in message
+    assert metadata["output_tail"] == "worker started"
+    assert metadata["worker_returncode"] == -9
+    manager.shutdown()
+
+
+def test_restart_joins_queue_tail_and_resets_old_priority(tmp_path, monkeypatch):
+    manager, database, _ = _make_manager(tmp_path)
+    monkeypatch.setattr(manager, "_dispatch", lambda: None)
+    failed = _seed_download(database, "acme/retry", "failed", created_at="2025-01-01")
+    database.update_download(failed["id"], priority=99)
+    first = _seed_download(database, "acme/first", "queued", created_at="2026-01-01")
+    second = _seed_download(database, "acme/second", "queued", created_at="2026-02-01")
+    manager.restart(failed["id"])
+    assert [j["id"] for j in database.queued_downloads()] == [first["id"], second["id"], failed["id"]]
+    restarted = database.get_download(failed["id"])
+    assert restarted["created_at"] == "2025-01-01"
+    assert restarted["priority"] == 0
+    assert restarted["queued_at"] > second["queued_at"]
+    manager.shutdown()
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "complete", "cancelled"])
+@pytest.mark.parametrize("scope", ["all", "owner", "unowned"])
+def test_download_listing_matches_queue_and_last_completion(tmp_path, terminal_status, scope):
+    manager, database, _ = _make_manager(tmp_path)
+    owner = None
+    if scope == "owner":
+        owner = "member"
+        database.create_user({"id": owner, "username": owner, "display_name": owner,
+            "password_hash": "unused", "role": "member", "created_at": "2026-01-01", "updated_at": "2026-01-01"})
+    retry = _seed_download(database, "acme/retry", terminal_status, created_at="2025-01-01", completed_at="2026-03-01", user_id=owner)
+    older = _seed_download(database, "acme/older", "complete", created_at="2026-01-01", completed_at="2026-02-01", user_id=owner)
+    first = _seed_download(database, "acme/first", "queued", created_at="2026-01-01", user_id=owner)
+    second = _seed_download(database, "acme/second", "queued", created_at="2026-02-01", user_id=owner)
+    running = _seed_download(database, "acme/running", "downloading", user_id=owner)
+    kwargs = {} if scope == "all" else {"user_id": owner or "member", "include_unowned": scope == "unowned"}
+    assert [j["id"] for j in database.list_downloads(**kwargs)] == [running["id"], first["id"], second["id"], retry["id"], older["id"]]
+    assert database.list_downloads(limit=1, **kwargs)[0]["id"] == running["id"]
+    manager.shutdown()
+
+
+def test_old_download_rows_gain_queue_timestamp_without_losing_order(tmp_path):
+    manager, database, _ = _make_manager(tmp_path)
+    first = _seed_download(database, "acme/first", "queued", created_at="2026-01-01")
+    second = _seed_download(database, "acme/second", "queued", created_at="2026-02-01")
+    with database.connect() as connection:
+        connection.execute("ALTER TABLE downloads DROP COLUMN queued_at")
+    database.initialize()
+    assert [j["id"] for j in database.queued_downloads()] == [first["id"], second["id"]]
+    assert database.get_download(first["id"])["queued_at"] is None
+    manager.shutdown()
 
 
 # --- cancel of a paused job ----------------------------------------------

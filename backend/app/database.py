@@ -175,6 +175,7 @@ DOWNLOAD_FIELDS = {
     "updated_at",
     "completed_at",
     "priority",
+    "queued_at",
 }
 
 RUNTIME_JOB_FIELDS = {
@@ -326,7 +327,8 @@ class Database:
                     updated_at TEXT NOT NULL,
                     completed_at TEXT,
                     user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-                    priority INTEGER NOT NULL DEFAULT 0
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    queued_at TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_downloads_status
@@ -465,6 +467,8 @@ class Database:
                     "ALTER TABLE downloads ADD COLUMN priority INTEGER "
                     "NOT NULL DEFAULT 0"
                 )
+            if "queued_at" not in columns:
+                connection.execute("ALTER TABLE downloads ADD COLUMN queued_at TEXT")
             local_model_columns = self._column_names(connection, "local_models")
             if "storage_backend" not in local_model_columns:
                 connection.execute(
@@ -1146,18 +1150,21 @@ class Database:
         return self.get_watched_model(user_id, repo_id)
 
     def create_download(self, record: dict[str, Any]) -> dict[str, Any]:
-        params = {**record, "user_id": record.get("user_id")}
+        params = {
+            **record, "user_id": record.get("user_id"),
+            "queued_at": record.get("queued_at") or record["created_at"],
+        }
         with self._write_lock, self.connect() as connection:
             connection.execute(
                 """
                 INSERT INTO downloads (
                     id, repo_id, revision, status, total_bytes, downloaded_bytes,
                     progress, speed_bps, error, target_path, payload_json,
-                    metadata_json, created_at, updated_at, completed_at, user_id
+                    metadata_json, created_at, updated_at, completed_at, user_id, queued_at
                 ) VALUES (
                     :id, :repo_id, :revision, :status, :total_bytes, :downloaded_bytes,
                     :progress, :speed_bps, :error, :target_path, :payload_json,
-                    :metadata_json, :created_at, :updated_at, :completed_at, :user_id
+                    :metadata_json, :created_at, :updated_at, :completed_at, :user_id, :queued_at
                 )
                 """,
                 params,
@@ -1182,26 +1189,34 @@ class Database:
     def list_downloads(
         self, limit: int = 100, user_id: str | None = None, include_unowned: bool = False
     ) -> list[dict[str, Any]]:
+        ordering = """
+            CASE status WHEN 'downloading' THEN 0 WHEN 'preparing' THEN 0
+                WHEN 'queued' THEN 1 WHEN 'paused' THEN 2 ELSE 3 END ASC,
+            CASE WHEN status = 'queued' THEN priority ELSE 0 END DESC,
+            CASE WHEN status IN ('queued', 'paused')
+                THEN COALESCE(queued_at, created_at) END ASC,
+            COALESCE(completed_at, created_at) DESC, id ASC
+        """
         with self.connect() as connection:
             if user_id is None:
                 rows = connection.execute(
-                    "SELECT * FROM downloads ORDER BY created_at DESC LIMIT ?", (limit,)
+                    f"SELECT * FROM downloads ORDER BY {ordering} LIMIT ?", (limit,)
                 ).fetchall()
             elif include_unowned:
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT * FROM downloads
                     WHERE user_id = ? OR user_id IS NULL
-                    ORDER BY created_at DESC LIMIT ?
+                    ORDER BY {ordering} LIMIT ?
                     """,
                     (user_id, limit),
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    """
+                    f"""
                     SELECT * FROM downloads
                     WHERE user_id = ?
-                    ORDER BY created_at DESC LIMIT ?
+                    ORDER BY {ordering} LIMIT ?
                     """,
                     (user_id, limit),
                 ).fetchall()
@@ -1238,7 +1253,7 @@ class Database:
                 """
                 SELECT * FROM downloads
                 WHERE status = 'queued'
-                ORDER BY priority DESC, created_at ASC
+                ORDER BY priority DESC, COALESCE(queued_at, created_at) ASC, id ASC
                 """
             ).fetchall()
         return [self._decode_row(row) for row in rows]
@@ -1542,6 +1557,12 @@ class Database:
         "library_name": "local_models.library_name",
         "location": "local_models.location",
         "storage_backend": "local_models.storage_backend",
+        "state": """CASE WHEN EXISTS (
+            SELECT 1 FROM watched_models wm
+            WHERE wm.user_id = ? AND wm.repo_id = local_models.repo_id
+              AND COALESCE(wm.upstream_sha, '') <> '' AND wm.changed_at IS NOT NULL
+              AND COALESCE(local_models.sha, '') <> wm.upstream_sha
+        ) THEN 0 ELSE 1 END""",
     }
 
     def query_visible_local_models(
@@ -1607,6 +1628,8 @@ class Database:
         if storage:
             clauses.append("local_models.storage_backend = ?")
             parameters.append(storage)
+        if sort == "state":
+            parameters.append(user_id)
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT local_models.* FROM local_models "

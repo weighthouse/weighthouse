@@ -16,6 +16,7 @@ export const LIBRARY_SORTS = [
   'library_name',
   'location',
   'storage_backend',
+  'state',
 ] as const
 
 export type LibrarySort = (typeof LIBRARY_SORTS)[number]
@@ -33,6 +34,7 @@ export const HUB_PAGE_SORTS = [
   'downloads',
   'likes',
   'modified',
+  'state',
 ] as const
 
 export type HubPageSort = (typeof HUB_PAGE_SORTS)[number]
@@ -47,6 +49,7 @@ function hubPageValue(model: HubModel, sort: HubPageSort): string | number {
     case 'downloads': return model.downloads ?? 0
     case 'likes': return model.likes ?? 0
     case 'modified': return model.last_modified || ''
+    case 'state': return model.local ? 0 : model.gated ? 1 : 2
   }
 }
 
@@ -101,6 +104,7 @@ const freshOrderFor: Record<LibrarySort, SortOrder> = {
   library_name: 'asc',
   location: 'asc',
   storage_backend: 'asc',
+  state: 'asc',
   size_bytes: 'desc',
   parameter_count: 'desc',
   file_count: 'desc',

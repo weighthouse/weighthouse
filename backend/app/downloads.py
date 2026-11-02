@@ -42,28 +42,25 @@ class DownloadCancelled(Exception):
 class DownloadWorkerExit(RuntimeError):
     """The download worker subprocess exited non-zero.
 
-    The message is the client's final words — the tail of its combined
-    stdout/stderr — when it printed any. A process killed by SIGKILL
-    cannot print anything, so that specific case gets a message that
-    says what it means (usually an out-of-memory kill); other silent
-    exits keep a line naming the exit code. The job record also keeps
-    the tail whenever one exists.
+    SIGKILL takes precedence over earlier worker output. Other failures
+    use the worker's output when available. The job keeps that output
+    separately for diagnosis.
     """
 
     _SIGKILL_MESSAGE = (
         "The download process was killed by the operating system (SIGKILL) "
-        "before it could report an error. This usually means the server or "
+        "before it could report an error. One possible cause is that the server or "
         "container ran out of memory while transferring. See \"Performance "
-        "and resources\" in the Downloads documentation."
+        "and resources\" in the Downloads documentation for more detail."
     )
 
     def __init__(self, returncode: int, output: str | None):
         self.returncode = returncode
         self.output = output
-        if output:
-            super().__init__(output)
-        elif returncode == -9:
+        if returncode == -9:
             super().__init__(self._SIGKILL_MESSAGE)
+        elif output:
+            super().__init__(output)
         else:
             super().__init__(f"Download worker exited with code {returncode}.")
 
@@ -147,12 +144,11 @@ class DownloadManager:
             # error can say so too instead of leaking a raw HTTP status.
             if details.get("gated") and self._is_auth_error(error):
                 raise ValueError(self._gated_access_message(validated, details)) from error
-            code = self._http_error_code(str(error))
-            if details.get("gated") and code and code.startswith("5"):
+            if details.get("gated") and self._is_generic_hub_failure(error):
                 raise ValueError(
-                    self._gated_possible_message(validated, details.get("source_url"), code)
+                    f"{error}\n\n{self._gated_possible_cause_message(validated, details.get('source_url'))}"
                 ) from error
-            raise
+            raise ValueError(str(error)) from error
         payload = {
             "mode": selection.mode,
             "allow_patterns": selection.allow_patterns,
@@ -344,7 +340,8 @@ class DownloadManager:
         if not download or download["status"] != "paused":
             return download
         updated = self.database.update_download(
-            download_id, status="queued", error=None, updated_at=now_iso()
+            download_id, status="queued", error=None, priority=0,
+            queued_at=now_iso(), updated_at=now_iso()
         )
         self._dispatch()
         return updated
@@ -387,6 +384,8 @@ class DownloadManager:
             progress=0,
             error=None,
             completed_at=None,
+            priority=0,
+            queued_at=now_iso(),
             updated_at=now_iso(),
         )
         self._dispatch()
@@ -878,27 +877,24 @@ class DownloadManager:
     ) -> tuple[str, dict[str, Any]]:
         """Map a job failure to the message the row shows.
 
-        Gating is the one failure the app can explain: the frozen plan
-        records the repository's ``gated`` flag, and the Hub's own
-        401/403 replies say it too. A confirmed gate gets the definitive
-        wording; a bare 5xx gets the "if this model is gated" wording.
-        Everything else keeps the raw message.
+        Preserve worker diagnostics. Known gated repositories get access
+        guidance for an explicit refusal or an unexplained HTTP 500.
         """
         message = str(error).strip() or error.__class__.__name__
         # Keep the client's final words with the job (engine and the
         # Xet log path were already recorded at run start).
         metadata = dict(current.get("metadata") or {}) if current else {}
-        if isinstance(error, DownloadWorkerExit) and error.output:
-            metadata["output_tail"] = error.output
+        if isinstance(error, DownloadWorkerExit):
+            metadata["worker_returncode"] = error.returncode
+            if error.output:
+                metadata["output_tail"] = error.output
         repo_id = (current or {}).get("repo_id", "")
-        if metadata.get("gated") or self._is_auth_error(error):
+        if not isinstance(error, DownloadWorkerExit) and self._is_auth_error(error) and (
+            metadata.get("gated") or "gated" in message.lower()
+        ):
             return self._gated_worker_message(repo_id, metadata.get("source_url")), metadata
-        code = self._http_error_code(message)
-        if code and code.startswith("5"):
-            return (
-                self._gated_possible_message(repo_id, metadata.get("source_url"), code),
-                metadata,
-            )
+        if metadata.get("gated") and self._is_generic_hub_failure(error):
+            message += "\n\n" + self._gated_possible_cause_message(repo_id, metadata.get("source_url"))
         if attempts_made > 1:
             message = f"failed after {attempts_made} attempts: {message}"
         return message, metadata
@@ -907,24 +903,30 @@ class DownloadManager:
     def _is_auth_error(error: Exception) -> bool:
         text = f"{type(error).__name__}: {error}".lower()
         markers = (
-            "401",
-            "403",
             "unauthorized",
             "forbidden",
-            "gated",
+            "gatedrepoerror",
             "accept the model terms",
             "don't have permission",
             "do not have permission",
         )
-        return any(marker in text for marker in markers)
+        return bool(re.search(r"\b(?:401|403)\b", text)) or any(marker in text for marker in markers)
 
     @staticmethod
-    def _http_error_code(message: str) -> str | None:
-        match = re.search(r"(?:status|HTTP)\s*(\d{3})\b", message, re.IGNORECASE)
-        if match:
-            return match.group(1)
-        match = re.search(r"\b([45]\d{2})\b", message)
-        return match.group(1) if match else None
+    def _is_generic_hub_failure(error: Exception) -> bool:
+        if isinstance(error, DownloadWorkerExit) and error.returncode < 0:
+            return False
+        message = str(error).strip().splitlines()
+        if not message:
+            return False
+        last_line = re.sub(r"^(?:[\w.]*Error|Exception):\s*", "", message[-1])
+        return bool(re.fullmatch(
+            r"(?:Request failed with (?:status|HTTP)\s*500|HTTP(?: Error)?\s*500|500(?: Server Error)?)"
+            r"(?:\s*:\s*(?:Internal Server Error|Server Error))?"
+            r"(?:\s+for url:\s+\S+)?[.!]?",
+            last_line,
+            re.IGNORECASE,
+        ))
 
     @staticmethod
     def _model_terms_url(repo_id: str, source_url: Any) -> str:
@@ -952,14 +954,11 @@ class DownloadManager:
         )
 
     @classmethod
-    def _gated_possible_message(cls, repo_id: str, source_url: Any, code: str) -> str:
-        # Copy #28: a 5xx says nothing about gating by itself, so the
-        # message offers it as the likely cause rather than asserting it.
+    def _gated_possible_cause_message(cls, repo_id: str, source_url: Any) -> str:
         link = cls._model_terms_url(repo_id, source_url)
         return (
-            f"The Hub returned HTTP {code} while starting this download. "
-            f"If this model is gated, accept its terms at {link} and check the "
-            "Hub token in Settings / Hub access."
+            "This repository is gated. HTTP 500 may be hiding an access refusal. "
+            f"Check the model's terms at {link} and the token in Settings / Hub access."
         )
 
     def shutdown(self) -> None:

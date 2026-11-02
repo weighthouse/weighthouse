@@ -281,3 +281,12 @@ test('every page sort key is a valid comparator input', () => {
     assert.doesNotThrow(() => sortHubPage(models, key, 'asc'))
   }
 })
+
+test('State sorting puts copies first, then gated models, then blank states and reverses', () => {
+  const models = [hubModel({ id: 'a/open' }), hubModel({ id: 'b/gated', gated: true }), hubModel({ id: 'c/local', local: true, gated: true })]
+  assert.deepEqual(sortHubPage(models, 'state', 'asc').map(m => m.id), ['c/local', 'b/gated', 'a/open'])
+  assert.deepEqual(sortHubPage(models, 'state', 'desc').map(m => m.id), ['a/open', 'b/gated', 'c/local'])
+  const query = setSort(defaultLibraryQuery, 'state')
+  assert.equal(query.order, 'asc')
+  assert.deepEqual(parseLibraryQuery(libraryQuerySignature(query)), query)
+})

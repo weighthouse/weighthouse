@@ -493,14 +493,14 @@ def test_worker_exit_message_variants():
     # SIGKILL with no output: the message says what it means.
     assert str(DownloadWorkerExit(-9, None)) == (
         "The download process was killed by the operating system (SIGKILL) "
-        "before it could report an error. This usually means the server or "
+        "before it could report an error. One possible cause is that the server or "
         'container ran out of memory while transferring. See "Performance '
-        'and resources" in the Downloads documentation.'
+        'and resources" in the Downloads documentation for more detail.'
     )
     # Another silent exit keeps the generic line.
     assert str(DownloadWorkerExit(1, None)) == "Download worker exited with code 1."
-    # Any client output leads with the client's own words.
-    assert str(DownloadWorkerExit(-9, "last line")) == "last line"
+    assert "SIGKILL" in str(DownloadWorkerExit(-9, "last line"))
+    assert DownloadWorkerExit(-9, "last line").output == "last line"
 
 
 def test_killed_worker_reports_the_memory_message_on_the_job(tmp_path):

@@ -39,6 +39,7 @@ import {
   useSearchParams,
 } from 'react-router-dom'
 import { api } from './api'
+import { downloadErrorSummary, downloadErrorText, sortDownloads } from './downloadPresentation'
 import { BRAND } from './brand.ts'
 import {
   addGroup,
@@ -132,6 +133,7 @@ const columnLabels: Record<LibrarySort, string> = {
   library_name: 'Library',
   location: 'Location',
   storage_backend: 'Storage',
+  state: 'State',
 }
 const libraryOptions = [
   ['transformers', 'Transformers'],
@@ -193,6 +195,7 @@ const PAGE_SORT_LABELS: Record<HubPageSort, string> = {
   downloads: 'downloads',
   likes: 'likes',
   modified: 'modified',
+  state: 'state',
 }
 
 function ModelsPage({
@@ -343,6 +346,7 @@ function ModelsPage({
     downloads: 'desc',
     likes: 'desc',
     modified: 'desc',
+    state: 'asc',
   }
   function choosePageSort(key: string) {
     if (!(HUB_PAGE_SORTS as readonly string[]).includes(key)) return
@@ -439,6 +443,7 @@ function ModelsPage({
                 <option value="page:downloads">Downloads</option>
                 <option value="page:likes">Likes</option>
                 <option value="page:modified">Modified</option>
+                <option value="page:state">State</option>
               </optgroup>
             </select>
             <ChevronDown size={14} />
@@ -1146,6 +1151,7 @@ function DownloadStatus({
   onOpen?: (job: DownloadJob) => void
 }) {
   const isActive = activeDownloadStatuses.includes(job.status)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const isPaused = job.status === 'paused'
   const isHistory = job.status === 'complete' || job.status === 'cancelled' || job.status === 'failed'
   const busy = (action: DownloadRowAction) => busyKey === `${job.id}:${action}`
@@ -1163,6 +1169,15 @@ function DownloadStatus({
   const xetLog = typeof job.metadata.xet_log === 'string' ? job.metadata.xet_log : ''
   const engine = job.metadata.engine === 'xet' || job.metadata.engine === 'http' ? job.metadata.engine : ''
 
+  async function copyError() {
+    try {
+      await navigator.clipboard.writeText(downloadErrorText(job))
+      setCopyState('copied')
+    } catch {
+      setCopyState('failed')
+    }
+  }
+
   const open = onOpen
     ? () => onOpen(job)
     : undefined
@@ -1171,22 +1186,7 @@ function DownloadStatus({
     if (onAction) onAction(job, action)
   }
   return (
-    <article
-      className={`download-row${open ? ' clickable-row' : ''}`}
-      onClick={open}
-      role={open ? 'button' : undefined}
-      tabIndex={open ? 0 : undefined}
-      onKeyDown={
-        open
-          ? (event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault()
-                open()
-              }
-            }
-          : undefined
-      }
-    >
+    <article className="download-row">
       <div className={`download-state-icon ${job.status}`}>
         {job.status === 'complete' ? (
           <PackageCheck size={19} />
@@ -1203,7 +1203,7 @@ function DownloadStatus({
       <div className="download-main">
         <div className="download-title">
           <div>
-            <h3>{job.repo_id}</h3>
+            <h3>{open ? <button type="button" className="download-model-link" onClick={open}>{job.repo_id}</button> : job.repo_id}</h3>
             <span>{modeLabel}, revision {job.revision}</span>
           </div>
           <div className="download-title-actions row-actions">
@@ -1319,19 +1319,30 @@ function DownloadStatus({
           </div>
         )}
         {job.status === 'failed' && (
-          <div className="download-error">
-            <AlertCircle size={15} />
-            <div className="download-error-body">
-              <span>{job.error}</span>
-              {outputTail && (
-                <pre className="worker-output-tail">{outputTail}</pre>
-              )}
-              <div className="download-diagnostics">
-                {engine && <span>{engine === 'xet' ? 'Xet transport' : 'HTTP transport'}</span>}
-                {xetLog && <code>{xetLog}</code>}
+          <details className="download-failure">
+            <summary>{downloadErrorSummary(job)}</summary>
+            <button
+              type="button"
+              className="secondary-button compact"
+              onClick={copyError}
+            >
+              {copyState === 'copied' ? 'Copied' : 'Copy error'}
+            </button>
+            {copyState === 'failed' && <span role="status">Could not copy error.</span>}
+            <div className="download-error">
+              <AlertCircle size={15} />
+              <div className="download-error-body">
+                <pre className="download-error-message">{job.error}</pre>
+                {outputTail && outputTail !== job.error && (
+                  <pre className="worker-output-tail">{outputTail}</pre>
+                )}
+                <div className="download-diagnostics">
+                  {engine && <span>{engine === 'xet' ? 'Xet transport' : 'HTTP transport'}</span>}
+                  {xetLog && <code>{xetLog}</code>}
+                </div>
               </div>
             </div>
-          </div>
+          </details>
         )}
       </div>
     </article>
@@ -1356,10 +1367,11 @@ function DownloadsPage({
   const [historyFilter, setHistoryFilter] = useState<'all' | 'failed'>('all')
   const navigate = useNavigate()
   useScrollMemory('downloads')
-  const running = jobs.filter((job) => activeDownloadStatuses.includes(job.status))
-  const paused = jobs.filter((job) => job.status === 'paused')
+  const orderedJobs = useMemo(() => sortDownloads(jobs), [jobs])
+  const running = orderedJobs.filter((job) => activeDownloadStatuses.includes(job.status))
+  const paused = orderedJobs.filter((job) => job.status === 'paused')
   const active = [...running, ...paused]
-  const finished = jobs.filter((job) => !active.includes(job))
+  const finished = orderedJobs.filter((job) => !active.includes(job))
   const failedCount = jobs.filter((job) => job.status === 'failed').length
   const query = historyQuery.trim().toLowerCase()
   const visibleFinished = finished.filter(

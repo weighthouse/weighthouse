@@ -5,51 +5,53 @@
 <h1 align="center">Weighthouse</h1>
 
 <p align="center">
-  A self-hosted model library.<br>
-  Download Hugging Face models onto your own storage, pin the revision you want, verify the copy, and keep an eye out for updates. Includes an MCP server and scoped keys for agentic use, and multiple locations and user accounts support enterprise deployments with tiered storage.
+  <b>A self-hosted model library.</b><br>
+  Download Hugging Face models onto storage you control. Pin revisions, verify local copies, track upstream changes, and move models between storage locations. Use the web interface yourself, or give AI agents scoped access through the built-in MCP server and API.
 </p>
 
-![Weighthouse model catalog with live model cards, filters, search, and download actions](docs/images/models-catalog.png)
+![Weighthouse Library filtered to speech models, showing local sizes, file counts, and available updates](docs/images/library-speech-models.png)
 
 <table>
   <tr>
-    <td width="50%" valign="top"><strong>Multi-user</strong><br>Roles, per-account libraries, notes, and preferences.</td>
-    <td width="50%" valign="top"><strong>Shared notes</strong><br>Record your notes for each model; optionally share them with the team.</td>
+    <td width="50%" valign="top"><strong>Managed downloads</strong><br>Full repositories or selected files, with retries, restart recovery, and optional Xet.</td>
+    <td width="50%" valign="top"><strong>Agent operations</strong><br>Built-in MCP and API, with scoped keys for model discovery, downloads, verification, and moves.</td>
   </tr>
   <tr>
-    <td valign="top"><strong>Private uploads</strong><br>Upload your own weights, keep them private or choose to share them.</td>
-    <td valign="top"><strong>Storage locations</strong><br>Move copies between cold, warm, and hot tiers on demand.</td>
+    <td valign="top"><strong>Revision tracking</strong><br>Pin revisions, verify local copies, and review upstream file changes before updating.</td>
+    <td valign="top"><strong>Storage locations</strong><br>Move managed models between named filesystem locations; optional S3-compatible backend.</td>
   </tr>
   <tr>
-    <td valign="top"><strong>Revision pinning</strong><br>Drift is reported, never automatically applied.</td>
-    <td valign="top"><strong>Agentic control</strong><br>Scoped keys and a stable API for ops and locally proxied model research.</td>
+    <td valign="top"><strong>Model discovery</strong><br>Search and filter Hugging Face repositories; inspect GGUF metadata without downloading weights.</td>
+    <td valign="top"><strong>Library organization</strong><br> models already on disk; save Hub models, organize collections, and keep per-model notes.</td>
   </tr>
   <tr>
-    <td colspan="2" valign="top"><strong>One container</strong><br>Easy deployment with the provided Docker container.</td>
+    <td valign="top"><strong>Multi-user</strong><br>A shared managed library with personal collections, shared notes, and private uploads.</td>
+    <td valign="top"><strong>One container</strong><br> Docker Compose deployment, with SQLite by default and optional PostgreSQL.</td>
   </tr>
 </table>
 
+
 ## Run it
 
-Weighthouse ships as a container. You need Docker and two host directories to run it: one for model files, one for application state.
+Weighthouse ships as a container. You need Docker and two host directories: one for model files, one for application state. The defaults are `./models` and `./data`.
 
 ```bash
 mkdir weighthouse && cd weighthouse
-curl -O https://raw.githubusercontent.com/weighthouse/weighthouse/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/weighthouse/weighthouse/main/.env.example
+curl -fLO https://raw.githubusercontent.com/weighthouse/weighthouse/main/docker-compose.yml
+curl -fL -o .env https://raw.githubusercontent.com/weighthouse/weighthouse/main/.env.example
 ```
 
-Edit `.env` — `MODEL_STORAGE_PATH` is the host directory that holds models — then:
+Edit `.env` — `MODEL_STORAGE_PATH` is the host directory that holds your models — then:
 
 ```bash
 docker compose up -d
 ```
 
-Open port 7860. The first time you visit you'll be prompted to create the administrator account; you can add additional accounts from Settings.
+Open `http://localhost:7860`, or use your server's address if running remotely. On your first visit, you'll be prompted to create the administrator account. Additional accounts can be added from Settings.
 
-Session cookies are marked Secure by default. If you're serving via plain HTTP, set "ALLOW_INSECURE_COOKIES=true" in your .env file.
+Session cookies are marked Secure by default. For HTTP-only deployments on a trusted network, set `ALLOW_INSECURE_COOKIES=true` in `.env`. Use HTTPS for deployments accessible outside your trusted network.
 
-Windows users can run it with Docker Desktop through the helpers in [deploy/desktop](deploy).
+Windows users can run Weighthouse with Docker Desktop using the helpers in [deploy/desktop](deploy/desktop).
 
 ## Upgrading from ModelHarbor
 
@@ -67,11 +69,14 @@ All you need to do is pull the new Docker image. If you use the default SQLite d
 | [Agent API](docs/agent-api.md) | API keys and the MCP endpoint for local agents |
 | [Development](docs/development.md) | Running from a source checkout, tests |
 
-## What's new in 2.0.0
+## What's new in 2.0.1
 
-* Weighthouse — the project has a new name
-* Library database moved to a neutral filename with automatic migration from modelharbor.sqlite3
-* Comment and documentation cleanup, dependency upgrades, and a security sweep
+- Clearer download errors, with compact failed rows, expandable details, and copyable diagnostics.
+- Predictable download ordering: restarted jobs join the queue at the end, and their latest results appear at the top of History.
+- State sorting in Explore and Library, plus sortable columns in Watched.
+- Fixed model moves between filesystems placing files inside an extra directory.
+
+See the [full changelog](CHANGELOG.md) for details and earlier releases.
 
 ## License
 

@@ -891,6 +891,15 @@ def local_models(
                 model = database.get_visible_local_model(user["id"], repo_id)
                 if model:
                     items.append(model)
+    if sort == "state" and note_hits:
+        watches = {row["repo_id"]: row for row in database.list_watched_models(user["id"])}
+        items.sort(key=lambda item: item["repo_id"])
+        items.sort(
+            key=lambda item: 0 if item["repo_id"] in watches and build_watch_payload(
+                watches[item["repo_id"]], item
+            )["update_available"] else 1,
+            reverse=order.lower() == "desc",
+        )
     previews = database.note_previews(user["id"], is_admin)
     for item in items:
         if item["repo_id"] in note_hits:

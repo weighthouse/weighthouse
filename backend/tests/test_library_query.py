@@ -130,6 +130,31 @@ def test_unknown_sort_or_order_is_refused(database: Database):
         database.query_visible_local_models("keeper", order="")
 
 
+def test_state_sort_uses_only_the_current_members_watches(database: Database):
+    _seed(database)
+    database.record_watch_check("watch-1", upstream_sha="bbb222", checked_at="2026-10-01", changed_at="2026-10-01")
+    ascending = database.query_visible_local_models("keeper", sort="state", order="asc")
+    assert ascending[0]["repo_id"] == "acme/offsite"
+    descending = database.query_visible_local_models("keeper", sort="state", order="desc")
+    assert descending[-1]["repo_id"] == "acme/offsite"
+    other = database.query_visible_local_models("jacksparrow", sort="state", order="asc")
+    assert [m["repo_id"] for m in other] == ["acme/large", "acme/offsite", "acme/small", "acme/vision"]
+    filtered = database.query_visible_local_models("keeper", sort="state", order="asc", storage="s3")
+    assert [m["repo_id"] for m in filtered] == ["acme/offsite"]
+
+
+def test_state_sort_includes_models_found_only_through_notes(database, monkeypatch):
+    from app import main as main_module
+
+    _seed(database)
+    database.record_watch_check("watch-1", upstream_sha="bbb222", checked_at="2026-10-01", changed_at="2026-10-01")
+    database.create_model_note({"id": "note-1", "repo_id": "acme/offsite", "author_id": "keeper",
+        "body": "large model", "pinned": 0, "shared": 0, "created_at": "2026-10-01", "updated_at": "2026-10-01"})
+    monkeypatch.setattr(main_module, "database", database)
+    result = main_module.local_models({"id": "keeper", "role": "admin"}, query="large", sort="state", order="asc")
+    assert [m["repo_id"] for m in result["items"]] == ["acme/offsite", "acme/large"]
+
+
 def test_favorited_and_watching_are_the_built_in_filters(database: Database):
     _seed(database)
     favorited = [m["repo_id"] for m in database.query_visible_local_models(
